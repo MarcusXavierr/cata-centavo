@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads .nvmrc, so the Node version lives in exactly one place.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `ci`, not `install`: installs strictly from the lockfile and fails if it
+      # has drifted out of sync with package.json.
+      - run: npm ci
+
+      # Not ceremony: Node strips types without checking them, so without this
+      # step the project has no type checking at all (ADR §3).
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
