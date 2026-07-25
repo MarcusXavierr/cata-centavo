@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# test artifacts
+coverage/
+.nyc_output/
+
+# local data and secrets — NEVER commit (ADR §9, §10)
+# cache.db holds the full financial history in plaintext; *.key is the 0600
+# master key. The -shm/-wal siblings come from journal_mode=WAL (§16).
+*.db
+*.db-shm
+*.db-wal
+*.key
+.env
+.env.*
+!.env.example
+
+# packaging artifacts
+*.tgz
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# logs
+*.log
+npm-debug.log*

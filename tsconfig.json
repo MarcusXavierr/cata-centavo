@@ -1,0 +1,49 @@
+{
+  "compilerOptions": {
+    // Node 24 implements ES2024 in full. Pinning the target (rather than
+    // "esnext") stops a TypeScript upgrade from shifting it underneath us.
+    "target": "es2024",
+    "lib": ["es2024"],
+
+    // "nodenext" makes tsc resolve modules exactly as Node does: it honours
+    // "type": "module", each package's "exports" field, and CJS/ESM interop.
+    "module": "nodenext",
+
+    // Without this, tsc loads the @types of every package in node_modules.
+    "types": ["node"],
+
+    // --- strictness ---
+    "strict": true,
+    // array[i] becomes T | undefined. Noisy, but it is the safety net the
+    // pagination of ADR §14.2 needs — there, a bad index means missing money.
+    "noUncheckedIndexedAccess": true,
+    // { document?: string } stops accepting an explicit undefined.
+    // Speaks directly to ADR §12.2: absence is NULL, never ''.
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // --- the block ADR §3 justifies ---
+    // Rejects enum and parameter properties at tsc time, BEFORE they become an
+    // ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX crash in production.
+    "erasableSyntaxOnly": true,
+    // Forbids imports/exports that only exist in type space without the `type`
+    // keyword. Node strips types without understanding them; ambiguity here
+    // turns into a runtime error.
+    "verbatimModuleSyntax": true,
+    // The pair that closes the loop: source imports "./balance.ts" (what Node
+    // wants in dev) and the emit writes "./balance.js" (what the package needs).
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+
+    // --- emit ---
+    // outDir/rootDir live only in tsconfig.build.json: here we run --noEmit, and
+    // "rootDir": "src" would clash with tests/ being in "include" (TS6059).
+    "sourceMap": true,
+    // This is a CLI, not a library. Nobody imports our types.
+    "declaration": false,
+    "skipLibCheck": true
+  },
+  // Tests are type-checked too. tsconfig.build.json narrows this to "src".
+  "include": ["src", "tests"]
+}
