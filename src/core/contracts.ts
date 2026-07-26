@@ -6,6 +6,8 @@
  * includes the Pluggy SDK's types: the vocabulary here is ours (§14.0).
  */
 
+import type { Account } from "./account.ts";
+
 /** Injectable time. Every freshness and expiry rule reads the clock (ADR §7). */
 export type Clock = {
   now(): Date;
@@ -13,6 +15,21 @@ export type Clock = {
 
 /** The other half of injectable time: waiting, for the transport's 429 backoff. */
 export type Sleep = (milliseconds: number) => Promise<void>;
+
+/** Why a call to the bank failed, in a form core and MCP can switch on. */
+export type FailureKind =
+  | "auth"
+  | "unknown-connection"
+  | "rate-limited"
+  | "unavailable"
+  | "no-accounts"
+  | "bad-response";
+
+/** A bank failure with a stable kind for programmatic handling. */
+export type BankFailure = {
+  readonly kind: FailureKind;
+  readonly message: string;
+};
 
 /** What travels with a log line. Never a secret's value (ADR §16.2). */
 export type LogFields = Readonly<Record<string, unknown>>;
@@ -72,4 +89,8 @@ export type Bank = {
   verifyCredentials(): Promise<void>;
   /** Rejects when the id is unknown, or when the request cannot be made. */
   getConnection(id: string): Promise<Connection>;
+  /** Every account on one connection, with the connection's freshness stamped on each. */
+  getAccounts(connectionId: string): Promise<readonly Account[]>;
+  /** Rejects with a NotFoundError when Pluggy does not know the id. */
+  getAccount(accountId: string): Promise<Account>;
 };

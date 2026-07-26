@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cata-centavo": {
+      "command": "./scripts/mcp-dev.sh",
+      "env": {
+        "PLUGGY_CLIENT_ID": "${PLUGGY_CLIENT_ID:-}",
+        "PLUGGY_CLIENT_SECRET": "${PLUGGY_CLIENT_SECRET:-}",
+        "PLUGGY_ITEM_IDS": "${PLUGGY_ITEM_IDS:-}",
+        "CATA_CENTAVO_LOG_LEVEL": "${CATA_CENTAVO_LOG_LEVEL:-info}"
+      }
+    }
+  }
+}

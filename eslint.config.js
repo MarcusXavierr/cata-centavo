@@ -43,6 +43,11 @@ export default tseslint.config(
       "@typescript-eslint/await-thenable": "error",
       "@typescript-eslint/no-explicit-any": "error",
       "no-console": "error",
+      "no-restricted-properties": ["error", {
+        object: "process",
+        property: "stdout",
+        message: "stdout is the JSON-RPC channel (ADR §4). Human-facing output goes to stderr.",
+      }],
       "local/complexity-ceiling": "error",
       "local/require-disable-reason": "error",
     },

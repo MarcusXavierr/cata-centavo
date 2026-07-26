@@ -51,6 +51,36 @@ export const ITEM = z.object({
 
 export type WireItem = z.infer<typeof ITEM>;
 
+export const ACCOUNT = z.object({
+  id: z.string().min(1),
+  itemId: z.string().min(1),
+  type: z.string(),
+  subtype: z.string().nullish(),
+  name: z.string(),
+  marketingName: z.string().nullish(),
+  balance: z.number(),
+  currencyCode: z.string(),
+  creditData: z
+    .object({
+      brand: z.string().nullish(),
+      balanceCloseDate: z.string().nullish(),
+      balanceDueDate: z.string().nullish(),
+      availableCreditLimit: z.number().nullish(),
+      creditLimit: z.number().nullish(),
+    })
+    .nullish(),
+});
+
+/** Pluggy's offset envelope for `/accounts`. */
+export const ACCOUNT_PAGE = z.object({
+  total: z.number(),
+  totalPages: z.number(),
+  page: z.number(),
+  results: z.array(ACCOUNT),
+});
+
+export type WireAccount = z.infer<typeof ACCOUNT>;
+
 /**
  * Pluggy's error envelope. Read on every non-2xx, because the status alone is not
  * a diagnosis: one 400 means a malformed request, another means a consent the
