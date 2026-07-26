@@ -8,12 +8,7 @@ import { summarize, type Summary } from "../../core/balance.ts";
 import type { Account } from "../../core/account.ts";
 import type { Logger } from "../../core/contracts.ts";
 import { prune, toDecimal } from "../format.ts";
-import type { Source } from "../source.ts";
-
-export type ToolDeps = {
-  readonly source: Source;
-  readonly log: Logger;
-};
+import { configurationProblems, finishToolError, textResult, type ToolDeps } from "./result.ts";
 
 export const GET_BALANCE_DESCRIPTION = `Gets consolidated figures across all configured bank connections.
 
@@ -129,23 +124,4 @@ function accountsAsOf(accounts: readonly Account[]): readonly unknown[] {
   return [...byConnection.values()].map((account) =>
     prune({ connectionId: account.connectionId, lastUpdatedAt: account.lastUpdatedAt?.toISOString() ?? null }),
   );
-}
-
-function finishToolError(
-  log: Logger,
-  startedAt: number,
-  message: string,
-  fields: Readonly<Record<string, unknown>>,
-): CallToolResult {
-  log.info({ durationMs: Date.now() - startedAt, outcome: "tool-error", ...fields }, "Tool finished with an error");
-
-  return { content: [{ type: "text", text: message }], isError: true };
-}
-
-function configurationProblems(problems: readonly string[]): string {
-  return `Configuration problems:\n${problems.join("\n")}`;
-}
-
-function textResult(payload: unknown): CallToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(prune(payload)) }] };
 }

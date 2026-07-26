@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { account, threeConnections } from "../../fakes/fake-bank.ts";
 import { fakeLogger } from "../../fakes/fake-logger.ts";
 import { fakeSource } from "../../fakes/fake-source.ts";
+import type { Source } from "../../../src/mcp/source.ts";
 import {
   handleGetAccounts,
   handleGetBalanceByAccount,
@@ -25,6 +26,14 @@ function message(result: { readonly content: readonly { readonly type: string; r
   return first.text;
 }
 
+function deps(source: Source, log: ReturnType<typeof fakeLogger>) {
+  let reader = null;
+  if (source.ok) {
+    reader = source.reader;
+  }
+  return { source, log, reader, clock: { now: () => new Date() } };
+}
+
 describe("MCP account tools", () => {
   const log = fakeLogger();
 
@@ -36,9 +45,9 @@ describe("MCP account tools", () => {
       },
     };
 
-    registerGetAccounts(server as never, { source: fakeSource(), log });
-    registerGetBalanceByAccount(server as never, { source: fakeSource(), log });
-    registerGetBalance(server as never, { source: fakeSource(), log });
+    registerGetAccounts(server as never, deps(fakeSource(), log));
+    registerGetBalanceByAccount(server as never, deps(fakeSource(), log));
+    registerGetBalance(server as never, deps(fakeSource(), log));
 
     for (const description of descriptions) {
       assert.doesNotMatch(description, /\bbill\b/i);
@@ -49,7 +58,7 @@ describe("MCP account tools", () => {
   it("passes the requested account id through to the bank", async () => {
     const source = fakeSource();
 
-    await handleGetBalanceByAccount({ source, log }, { accountId: "acc-5" });
+    await handleGetBalanceByAccount(deps(source, log), { accountId: "acc-5" });
 
     assert.ok(source.bank.calls.includes("getAccount:acc-5"));
   });
@@ -77,7 +86,7 @@ describe("MCP account tools", () => {
 
   for (const refusal of refusals) {
     it(`refuses ${refusal.why}`, async () => {
-      const result = await handleGetBalanceByAccount({ source: refusal.source(), log }, { accountId: refusal.accountId });
+      const result = await handleGetBalanceByAccount(deps(refusal.source(), log), { accountId: refusal.accountId });
 
       assert.equal(result.isError, true);
       assert.match(message(result), /unknown account/i);
@@ -88,7 +97,7 @@ describe("MCP account tools", () => {
   it("lists every account with the unavailable connections named", async () => {
     const source = fakeSource({ unreachable: { "conn-2": new Error("Nubank is unavailable") } });
 
-    const result = await handleGetAccounts({ source, log });
+    const result = await handleGetAccounts(deps(source, log));
 
     assert.equal(result.isError, undefined);
     assert.deepEqual(payload(result), {
@@ -159,7 +168,7 @@ describe("MCP account tools", () => {
   });
 
   it("publishes a credit card's figure as usedCredit, never as balance", async () => {
-    const result = await handleGetAccounts({ source: fakeSource(), log });
+    const result = await handleGetAccounts(deps(fakeSource(), log));
     const accounts = payload(result) as { accounts: { type: string; usedCredit?: string; balance?: string }[] };
     const credit = accounts.accounts.find((candidate) => candidate.type === "CREDIT");
 
@@ -169,7 +178,7 @@ describe("MCP account tools", () => {
   });
 
   it("still publishes a bank account's figure as balance", async () => {
-    const result = await handleGetAccounts({ source: fakeSource(), log });
+    const result = await handleGetAccounts(deps(fakeSource(), log));
     const accounts = payload(result) as { accounts: { type: string; usedCredit?: string; balance?: string }[] };
     const bank = accounts.accounts.find((candidate) => candidate.type === "BANK");
 
@@ -180,7 +189,7 @@ describe("MCP account tools", () => {
 
   it("reports the config problems when the source is broken", async () => {
     const result = await handleGetAccounts(
-      { source: { ok: false, problems: ["PLUGGY_CLIENT_SECRET is missing or empty."] }, log },
+      deps({ ok: false, problems: ["PLUGGY_CLIENT_SECRET is missing or empty."] }, log),
     );
 
     assert.equal(result.isError, true);
