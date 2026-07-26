@@ -5,6 +5,10 @@ Status: **accepted in its foundations, open in its scope.**
 
 The engineering decisions (§3–§11) are settled and evidence-backed. The categorization scope (§12) and the roadmap ordering (§15) still carry blocking questions: §13 lists two open decisions, §12.12 four more, §14.3 one, and "Branches not yet walked" five — two of which block Phase 0 and Phase 1. **Do not read this document as ready to execute end to end.** Phases 0 and 0.5 are safe to start; everything from Phase 2 onward depends on questions this ADR names but does not answer.
 
+**Amendment, 2026-07-25 — Phase 0 unblocked, by deletion rather than by decision.** Configuration is now read from environment variables and nothing else. There is no config file, so the format-versioning question that blocked this phase has no subject left. Three further decisions fall out of that one: §9's credential sealing is suspended, §2's append-only registry cannot exist, and `init` validates without writing anything. Each affected section carries its own note below: §2, §4, §9, §14.6, §15 Phase 0, and "Branches not yet walked".
+
+**Amendment, 2026-07-26 — `manualUpdate` moves to Phase 0, because its debounce turns out to belong to Pluggy.** `init` now asks every configured connection to sync, unconditionally, and waits for it. The reason it can happen this early is that the "debounce measured in hours" of §11 needs no local state: `PATCH /items/{id}` answers **409 `CLIENT_IS_UPDATING_BEFORE_ALLOWED_FREQUENCY`** when the last sync is too recent, naming both the enforced interval and that sync's timestamp. Read the refusal as a successful *already fresh* and the whole feature needs no table, which is what unblocked it from Phase 5. Affected: §4, §11, §14.5, §14.6, §15 Phase 0 and Phase 5, §16.1, §16.2. `docs/research/pluggy-item-update.md` carries the sources and, more usefully, what the docs contradict themselves about.
+
 ---
 
 ## Context
@@ -55,6 +59,8 @@ This is not an oversight. It is a deliberate security decision by Pluggy, who as
 **`POST /connect_token`.** Pluggy issues a short-lived token (30m) that opens the Pluggy Connect widget. Passing an existing `itemId` re-authenticates that connection — this is the supported recovery path when credentials expire or consent is revoked, and it means **re-linking never requires the user to find a UUID again**. Omitting the `itemId` creates a *new* item through the widget. The Go implementation always passes one, using it purely for re-auth.
 
 **An append-only local registry.** Rather than a hand-maintained list, the server records every `itemId` the first time any tool resolves it successfully. Once seen, never lost. The prior implementation's own comment states the reasoning independently: *"The Pluggy API has no 'list all items' endpoint, so the server remembers each item_id the first time any tool resolves it successfully."* — corroborating §2's finding from a second direction.
+
+> **Amendment, 2026-07-25 — the registry does not exist.** Under environment-only configuration there is no file of ours to append to, so nothing is remembered between runs. The set of connections is exactly what `PLUGGY_ITEM_IDS` says at process start. This is a real loss and not an implementation detail: the paragraph above was the reason onboarding could be described as "paste each id once, ever", and without the registry it is "keep each id in your environment". Bring the registry back the day a local file exists again, wherever that file lands.
 
 **What remains genuinely impossible on our tier:** capturing the id of a *newly created* item back into a local process. The widget hands the new `itemId` to a callback, and callbacks mean webhooks, which the free tier does not include (see Context). So first contact with a bank still requires the user to read an id from the MeuPluggy dashboard and give it to us once. After that, the registry and connect tokens carry it.
 
@@ -117,6 +123,12 @@ npx cata-centavo           no argument = MCP server over stdio
 Argument parsing via `node:util` `parseArgs`, no dependency.
 
 **Accepted consequence:** an interactive flow, config file writing, and a versioned config format enter scope. None of this was in the original implementation plan — it becomes step 0 (`init`) and step 7 (`doctor`).
+
+> **Amendment, 2026-07-25.** Only the last sentence survives. Configuration comes from `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` and `PLUGGY_ITEM_IDS` (comma-separated), so there is no interactive flow, no file to write and no format to version. `init` still exists and is still a CLI mode, for the reason this section gives: it validates each id against the API before a wrong one costs the user two weeks of empty statements.
+>
+> Environment *variables*, never a `.env` file. §16.2 records the prior implementation auto-loading `.env` from the current working directory, which under `npx` is wherever the user happened to be standing. We read `process.env` and stop there.
+>
+> The cost lands on server mode. `.zshrc` is read by interactive shells, and an MCP client that spawns our process hands it the client's own environment, so the variables have to be repeated in the client config's `env` block. That is the standard mechanism for MCP servers, but it is one more step in the README that a config file would not have needed.
 
 **Rule that follows from stdio:** nothing but JSON-RPC may reach stdout. Logging goes to stderr, always. (The `node:sqlite` `ExperimentalWarning` on Node 22 goes to stderr — harmless — but on Node 24 it doesn't exist at all, since the module is stable.)
 
@@ -214,6 +226,12 @@ For us the split is: **sealing the credential is cheap and worth doing; sealing 
 
 **Decision:** seal credential values at rest with `node:crypto` AES-256-GCM, key from `$CATA_CENTAVO_KEY` → generated keyfile at `0600`. **Skip the OS keychain tier** — that is where the Go version needs a platform binding, and it is the one rung that would cost us a native dependency (§10). Cache stays plaintext, and the README says so.
 
+> **Amendment, 2026-07-25 — sealing is suspended, and the failure mode it addressed is gone anyway.** Credentials live in the environment. We never write them to disk, so there is no `secret.ts`, no master key, no `0600` keyfile and no sealed KV table. The one benefit the paragraph above claimed for sealing was removing "my clientSecret leaked in a backup"; not writing the secret at all removes it more completely than encrypting it would.
+>
+> Two things do not change. The transaction cache is still plaintext and the README still has to say so, because that argument never depended on where the credential lived. And the `apiKey` is still a secret with a two-hour life: it is now cached in memory only, which is enough because the server process lives for the whole MCP session and `init` is a single short run.
+>
+> What this gives up is the ability to configure the server without touching the environment, which matters for GUI MCP clients (see §4's note). Revisit the whole of this section the day a config file or a local registry comes back, because the sealed KV is the right home for both the credential and the 30-minute connect tokens of §2.
+
 **Rejected — OS keychain:** `keytar` is a native module, which contradicts §10 head-on and makes `npx` require a per-platform build matrix.
 
 **Rejected — encrypting the `.db`:** breaks `node:sqlite` (no SQLCipher), reintroduces a native dependency, and demands a passphrase every time the MCP client starts the server.
@@ -260,6 +278,14 @@ The split **did not eliminate** the migration problem. It reduced the surface ne
 Pluggy syncs with the banks daily on its own, and batch processes against the API are explicitly prohibited. **Do not build a cron.** The cache is populated on demand, at read time.
 
 `manualUpdate` (`PATCH /items/{id}` + poll) exists for user-triggered refreshes, with a debounce measured in hours — it returns "updated X minutes ago" rather than firing again.
+
+> **Amendment, 2026-07-26 — the debounce is Pluggy's, not ours.** Every sentence above survives; only the ownership of the last one changes. Pluggy enforces a minimum interval between client-triggered updates and refuses a `PATCH` that comes too soon with a 409 carrying `minUpdateFrequencyAllowedInHours` and the last `lastUpdatedAt`. So `init` asks unconditionally and treats that refusal as the answer, rather than keeping a timestamp of its own — which it could not do anyway, since §2's amendment leaves nothing remembered between runs.
+>
+> Brand-new client IDs are capped harder still, at one API update per hour, so most runs land on the refusal path. Auto-sync, meanwhile, runs every 24, 12 or 8 hours by subscription tier and on production applications only.
+>
+> **"Do not build a cron" is untouched, and it now has teeth.** This fires when a human types `init`, never on a schedule. Pluggy's prohibition on batch update processes is explicit.
+>
+> One finding worth carrying into Phase 4: for Open Finance connectors, an update does not refresh every product. Balances and recent transactions move on every update; **credit card bills, investment lists and loan instalments move once per day regardless.** Running `init` twice in an hour buys fresher balances and nothing else.
 
 ---
 
@@ -577,8 +603,16 @@ Specified in §12.6. The agent may create rules unaided because nothing is destr
 
 ### 14.5 Operations and observability
 
-**`manualUpdate(itemId)`** — V1 · effort: low
+**`manualUpdate(connectionId)`** — V1 · effort: low
 `PATCH /items/{id}`, then poll `GET /items/{id}` until `executionStatus` reaches `SUCCESS` or `PARTIAL_SUCCESS`. Rate limited to 20/min, and documented as being for *user-triggered* refreshes — daily updating is the auto-sync's job (§11). **Debounce measured in hours**, returning "updated X minutes ago" rather than firing again.
+
+> **Amendment, 2026-07-26 — built, in `core/refresh.ts`, and reached first through `init` rather than as a tool.** The signature above said `itemId`, against §14.0's own rule; it is `connectionId` now.
+>
+> Three corrections the implementation forced:
+>
+> - **The loop condition is `status === "UPDATING"`, not an `executionStatus` allowlist.** That is what Pluggy's own polling recipe does, and it is the safer shape: everything else terminates, so a status neither we nor the docs have seen ends the loop and gets reported instead of spinning for nineteen minutes. Pluggy's OpenAPI schema declares both fields bare `string` with no enum, and its prose docs and its SDK disagree about the members, down to the spelling of the investments one. Closing either union would have been a mistake.
+> - **20/min needs its own window.** The general limit is 360/min, so one shared limiter lets a fan-out of reads spend a budget the updates need. `transport` now claims a second window for `PATCH /items/`, in the same choke point and for the same §16.2 reason.
+> - **`WAITING_USER_INPUT` is a first-class outcome, not an error.** The item carries the label of what the bank wants — "Chave de segurança" — and reporting that label is the difference between an actionable message and a shrug. Answering it (`POST /items/{id}/mfa`) is deliberately not built: `init` is non-interactive per §14.6, and a `LOGIN_ERROR` cannot be fixed from the API at all, only through Pluggy Connect.
 
 **`listSources()`** — V1 · effort: trivial · not in Pierre
 Returns the configured `itemId`s with institution, last sync, item `status` / `executionStatus`, and consent state. Given §2, this is the closest thing to an item listing that can exist.
@@ -588,6 +622,22 @@ It **mitigates pitfall #7** (revoked consent returns empty data, not an error) o
 ### 14.6 CLI commands (not MCP tools)
 
 **`init`** — interactive. Collects `clientId` / `clientSecret`, accepts `itemId`s one at a time, calls `fetchItem` on each to validate immediately, and writes the config. Turns a pasted-UUID mistake into a two-second error instead of two weeks of empty statements. Cannot be a tool, because stdio is the JSON-RPC channel (§4).
+
+> **Amendment, 2026-07-25 — `init` validates, it does not collect and it does not write.** It reads the environment, authenticates once, calls the item endpoint on every configured id and prints a per-id report to stderr. Everything the original sentence promised about catching a pasted UUID still holds; only the writing is gone.
+>
+> One id failing does not abort the others. A report covering every connection is worth more than a report that stops at the first bad line, and the exit code carries the failure instead.
+>
+> This costs `init` its reason to be a CLI mode rather than a tool, since nothing interactive is left. It stays a CLI mode regardless, because a tool cannot be reached before the credentials it is diagnosing are known to work.
+
+> **Amendment, 2026-07-26 — `init` still does not write locally, but it does write to Pluggy.** It asks every configured connection to sync (§14.5) and waits for the result. "It does not write" was about our disk and stays true; a `PATCH` is nonetheless a side effect that spends Open Finance product quota and sits under a 20/min ceiling, so the earlier sentence was too broad and this replaces it.
+>
+> The read still comes before the update, for two reasons that are both worth the extra request: a 404 catches a mis-pasted UUID before anything is spent, and the institution's name has to be on screen before a wait that can run for minutes, or the spinner shows a UUID the whole time.
+>
+> **Five outcomes replace pass/fail,** because "unusable" was hiding differences a user has to act on differently: *refreshed*, *already fresh* (the 409 of §11), *waiting on you* (MFA, naming the parameter), *login refused* (Pluggy Connect only), and *still syncing* (we ran out of patience; Pluggy has not). Only the first two count as usable and exit 0.
+>
+> **A `PARTIAL_SUCCESS` exits 0 and prints its warnings.** A product that hit its monthly Open Finance quota went unrefreshed, which means the numbers under it are older than the rest — worth a `!` and a line naming the product, and not worth failing over.
+>
+> Waiting silently for minutes is not acceptable, so `init` draws a live region on stderr: a spinner and the current stage per connection on a terminal, one plain line per stage change anywhere else. Stdout stays empty either way (§4).
 
 **`doctor`** — diagnostics over every configured item: `status`, `executionStatus`, `statusDetail`, `lastUpdatedAt`, `consecutiveFailedLoginAttempts`, consent `expiresAt` / `revokedAt`, plus cache freshness and schema versions. In V2 it also reports rule ambiguity (§12.7).
 
@@ -633,6 +683,31 @@ Config format and its versioning, XDG path resolution, `parseArgs` dispatch, bot
 - One forced refresh and retry on a 401, then fail loudly.
 
 *Delivers:* a user can install and configure. *Answers:* are the credentials and item IDs even valid.
+
+> **Amendment, 2026-07-25.** Config format and its versioning leave this phase (see §4). What remains is XDG path resolution, `parseArgs` dispatch, the two SQLite files with their migration runner, `init`, and the auth discipline above. Both migration chains start empty, because no table this project has decided on belongs to a phase this early; the runner ships anyway so Phase 1 costs one array entry instead of a design.
+>
+> **The premise of the auth paragraph does not transfer to the Node SDK.** "Resolves it once in the constructor and freezes it" is true of the Go implementation and false of `pluggy-sdk@0.90.0`, whose `baseApi.js` resolves the key at the head of every request and checks the JWT `exp` first. One of the four rules above is therefore already satisfied. The other three are not, and none of them can be added from outside:
+>
+> | Rule | `pluggy-sdk` |
+> |---|---|
+> | lazily per request | already does it |
+> | margin | `payload.exp <= now`, so a token with 200ms left passes the check and the request 401s |
+> | single-flight | a plain async method; the account fan-out of §14.1 issues N concurrent `POST /auth` |
+> | 401 retry | `got` is configured to retry `429` and nothing else |
+>
+> The cached key is private instance state, so a margin cannot be injected. The SDK also has no rate limiter at all, which puts §16.2's rule ("the limiter goes inside the single send function, so a new endpoint cannot forget it") out of reach as long as the send function belongs to someone else.
+>
+> **Decision: our own client over `fetch`.** One `send()` carrying the rate limit, the key with its margin and single-flight, the 401 retry, the 429 backoff, and later the pagination of §14.2. `pluggy-sdk` stays installed as a source of types.
+>
+> **Second finding: the SDK's types are only true inside the SDK.** `item.d.ts` declares `lastUpdatedAt: Date | null`, and that holds because the SDK installs a reviver in `got` (`transforms.js` turns any ISO-8601 string into a `Date`). Parsing raw JSON ourselves, the field is a `string` at runtime while the type says `Date` — the shape of bug §16.2 was written to warn about. So: string unions come from the SDK (`ItemStatus` is `typeof ITEM_STATUSES[number]`, exact at runtime and already the no-`enum` pattern of §13), and records are described with Zod in `pluggy/wire.ts`, where the type is inferred from what we actually parse. That is Phase 0.5's "trust nothing but the raw HTTP body" written as code instead of as discipline.
+>
+> The rate limit value stays one named constant, defaulting to 360/min. Phase 0.5 step 4 has to settle it; until then the default is chosen on failure mode, since guessing too high costs a 429 and a retry while guessing too low makes the Phase 1 fan-out crawl and look broken.
+
+> **Amendment, 2026-07-26 — the phase grows `manualUpdate`, and two items come off `send()`'s to-do list.** `init` now triggers and waits on a sync per §14.5, which pulled that tool forward from Phase 5. Two of the things `send()` was promised to carry are built because this made them load-bearing: the **429 backoff**, honouring `Retry-After` for a bounded number of retries, and a **second rate-limit window** for `PATCH /items/` at 20/min. Pagination is still Phase 1's.
+>
+> A third was not on the list and should have been: **the error body**. `classify` threw the status and dropped everything else, so the first real 400 read "Pluggy returned 400 while refreshing connection …" and named neither of the four causes Pluggy documents for it. That is §16.2's scar with our name on it. Every non-2xx now parses Pluggy's envelope and repeats its `codeDescription`, `message` and `canRetryAfterDate`.
+>
+> What remains for Phase 0.5 step 4 is unchanged, with one addition: the 20/min figure for updates is documented plainly and needs no confirming, but whether the general limit is per minute or per hour still does.
 
 ### Phase 0.5 — Reconnaissance before writing feature code
 
@@ -694,6 +769,8 @@ Ships `setCategory`, `setCounterpartyCategory`, the `mcc_categories` seed table,
 
 `manualUpdate` with its hours-long debounce, and `listSources`. Pitfall #7 becomes an explicit error here: empty response → check consent → if revoked or expired, fail loudly instead of reporting "no transactions".
 
+> **Amendment, 2026-07-26 — `manualUpdate` left this phase for Phase 0.** It was here because the debounce looked like it needed persistence; it does not, because Pluggy enforces the interval itself (§11). The poll loop lives in `core/refresh.ts` and `init` is its first caller. What stays here is exposing it as an MCP tool, which is the part that needs §16.4's error split settled, and `listSources`.
+
 ### Phase 6 — Installments
 
 `getInstallments`, last, with real data in hand (§14.2).
@@ -726,6 +803,12 @@ Caveat that governs everything below: **only `internal/provider/sqlite` and `int
 
 **The poll-and-wait shape for `manualUpdate`** (§14.5): 2s initial backoff, doubling, capped at 30s, bounded retry count, cancellation checked both at the loop head and inside the sleep. It is the one well-built retry in the repo. **One change:** it treats anything other than `UPDATING`/`UPDATED` as terminal and therefore rejects `PARTIAL_SUCCESS`, which §14.5 requires us to accept.
 
+> **Amendment, 2026-07-26 — adopted in `core/refresh.ts`, with two changes rather than one.** The backoff is verbatim: 2s, doubling, 30s ceiling, 40 attempts, a little over eighteen minutes against a documented five-minute worst case for the login step alone. `PARTIAL_SUCCESS` is accepted, as required.
+>
+> The second change is the inverse of the first. Rather than widening the "keep going" set to admit `PARTIAL_SUCCESS`, the loop narrows it to `UPDATING` alone and treats everything else as terminal — which is what Pluggy's own polling recipe does. Enumerating the states worth continuing on is the bug: get the enum wrong and an unknown status spins for the full eighteen minutes. Enumerating the states worth *stopping* on cannot fail that way.
+>
+> Cancellation is the one part not adopted. In-loop checks earn their keep when this is an MCP tool a client can cancel without killing the process; today the only caller is `init`, where Ctrl-C ends the process and the handler's job is just to give the cursor back.
+
 **The liquidated-investment filter, verbatim including all three conditions:** skip when `status == "TOTAL_WITHDRAWAL" && balance == 0 && amount == 0`. Pluggy returns fully-withdrawn positions forever. The three-way `AND` is itself the finding — status alone was evidently not sufficient. Also strip the nested `transactions[]` array a position carries; it is unbounded and will dominate a response.
 
 **The bounded response shape of the current-bill tool:** seven scalars plus exactly five top transactions. It is the only payload in the repo that respects a context window, and it is the model for `getBillSummary`.
@@ -747,6 +830,10 @@ Caveat that governs everything below: **only `internal/provider/sqlite` and `int
 **The logger falls back to stdout.** If the log file cannot be opened, every log call writes protocol-corrupting text into the JSON-RPC channel — and the handlers log heavily. This is the concrete failure mode behind §4's stderr rule: **the fallback must be stderr, never stdout.** Relatedly, it logs a live 30-minute bearer token into a `0666` file. No secret value is ever an argument to a log call, and the log file gets the same `0600` as everything else.
 
 **The rate limiter is wired to two of nine endpoints.** It exists, it works, and seven call sites simply forgot to invoke it — including the item-status poll, which fans out concurrently across all connections. **Put the limiter inside the single HTTP send function** so a new endpoint cannot forget it. (The limit *value* is disputed — see Phase 0.5 step 4.)
+
+> **Amendment, 2026-07-26 — one send function, now two windows.** `PATCH /items/{id}` is limited to 20/min where everything else gets 360, so a single shared window would let a fan-out of reads spend the update budget. Both windows are claimed inside `transport`, which is the same lesson applied twice: the choke point decides, not the call site.
+>
+> This section also acquired a scar of our own, in the same family as the serializer above. `classify` built its message from the status code and discarded the response body, so the first real 400 from `PATCH /items/{id}` said "Pluggy returned 400" and named none of the four causes Pluggy documents for that status. The evidence was deleted before a human could see it, again, and it took a live credential to notice. **Every non-2xx body is parsed and its explanation repeated.**
 
 **A declared tool parameter that never reaches the wire.** One transaction filter is parsed, validated, logged and assigned to a struct field that the query builder never reads. The tool advertises a filter that does nothing. **Every tool parameter needs a test proving it reaches the request.**
 
@@ -779,7 +866,7 @@ That is direct evidence for §14.2's choice to make `getInstallments` a derived 
 Decisions this document names but does not make. Each says what it blocks, so a session picking up the ADR knows whether it can proceed.
 
 - **Cache freshness by range** — how to know whether `[from, to]` is partially cached. `fresh(accountId, from, to)` is still hand-waved, and it is load-bearing for every read path. Blocks phase 1.
-- **Config format versioning** written by `init`. Blocks phase 0.
+- ~~**Config format versioning** written by `init`. Blocks phase 0.~~ **Closed 2026-07-25** by removing the config file: configuration is environment-only (§4). Reopens the day a config file returns, and the answer waiting for it is an integer `version` field with a forward migration chain, refusing to guess when the file is newer than the binary.
 - **Test fixtures without committing real bank statements** to a public repository (§1 makes the repo public). Blocks phase 0.5, which is where fixtures get captured.
 - **`camelCase` or `snake_case`** for tool names (§14.0). Mechanical to apply, expensive to change after the README documents it. Blocks phase 1.
 - **The `isError`-content versus protocol-error split** (§16.4), per failure class. Our loudest designed failure — revoked consent — is worthless if it lands in the channel the model cannot read. Blocks phase 1.
