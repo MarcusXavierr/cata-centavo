@@ -2,12 +2,13 @@ import tseslint from "typescript-eslint";
 import { localRules } from "./tools/eslint-local-rules.js";
 
 /**
- * Sensores do artigo "Sensors for coding agents" (Martin Fowler, 2026). São
- * `warn` de propósito: informam, não cancelam. Os limites saíram da distribuição
- * real do código, não de gosto — ver o documento de design.
+ * Sensors from "Sensors for coding agents" (Martin Fowler, 2026). They are
+ * `warn` on purpose: they inform, they do not cancel. The thresholds come from
+ * the code's actual distribution rather than from taste. See the design
+ * document.
  *
- * `skipComments` é obrigatório. Sem ele o sensor pune o estilo de docblock com
- * referência de ADR que o CLAUDE.md exige.
+ * `skipComments` is mandatory. Without it the sensor punishes the ADR-citing
+ * docblock style that CLAUDE.md requires.
  */
 const SENSORS = {
   complexity: ["warn", 6],
@@ -44,16 +45,6 @@ export default tseslint.config(
       "no-console": "error",
       "local/complexity-ceiling": "error",
       "local/require-disable-reason": "error",
-    },
-  },
-
-  {
-    files: ["src/core/**/*.ts"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        { patterns: ["**/pluggy/**", "**/storage/**", "**/mcp/**", "pluggy-sdk"] },
-      ],
     },
   },
 

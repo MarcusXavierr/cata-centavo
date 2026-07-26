@@ -25,10 +25,18 @@ jobs:
       # step the project has no type checking at all (ADR §3).
       - run: npm run typecheck
 
-      # Sensor, not portão: avisos não reprovam, erros sim. As regras e os
-      # limites estão em docs/plans/2026-07-26-eslint-e-logging-design.md.
+      # A sensor, not a gate: warnings do not fail, errors do. The rules and
+      # thresholds live in docs/plans/2026-07-26-eslint-and-logging-design.md.
       - run: npm run lint
 
+      # Architecture rules. Unlike lint, these fail the build: a broken layer is
+      # not a style opinion. See docs/plans/2026-07-26-dependency-rules-design.md.
+      - run: npm run deps
+
       - run: npm test
+
+      # A report, not a gate. Coverage shows what the suite cannot see; mutation
+      # testing checks whether the covered code is asserted meaningfully.
+      - run: npm run coverage
 
       - run: npm run build

@@ -36,10 +36,8 @@ export function createLogger(options: LoggerOptions): Logger {
     { level: stderrLevel, stream: stderr },
   ];
 
-  if (options.logFile !== null && options.env.CATA_CENTAVO_LOG_FILE !== "off") {
-    const file = createFileDestination(options.logFile);
-    if (file !== null) streams.push({ level, stream: file });
-  }
+  const file = fileStream(options, level);
+  if (file !== null) streams.push(file);
 
   const root = pino(
     {
@@ -53,6 +51,19 @@ export function createLogger(options: LoggerOptions): Logger {
   );
 
   return wrap(root);
+}
+
+/** Null whenever the file is switched off, unconfigured, or could not be opened. */
+function fileStream(
+  options: LoggerOptions,
+  level: string,
+): { level: string; stream: DestinationStream } | null {
+  if (options.logFile === null || options.env.CATA_CENTAVO_LOG_FILE === "off") {
+    return null;
+  }
+
+  const stream = createFileDestination(options.logFile);
+  return stream === null ? null : { level, stream };
 }
 
 function wrap(log: PinoLogger): Logger {

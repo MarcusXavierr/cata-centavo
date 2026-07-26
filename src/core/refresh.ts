@@ -133,36 +133,38 @@ function settled(phase: RefreshPhase, connection: Connection): RefreshOutcome {
 
 const SUCCEEDED = new Set(["SUCCESS", "PARTIAL_SUCCESS"]);
 
+/**
+ * Every status whose phase `status` alone decides. `UPDATED` is the one that
+ * needs a second look and so is missing here.
+ */
+const PHASE_BY_STATUS: Readonly<Record<string, RefreshPhase>> = {
+  UPDATING: PHASES.updating,
+  MERGING: PHASES.updating,
+  // Undocumented as a `status`, yet Pluggy's own rate-limit page shows an item
+  // carrying it. Treated as the success it describes.
+  PARTIAL_SUCCESS: PHASES.refreshed,
+  WAITING_USER_INPUT: PHASES.needsUser,
+  WAITING_USER_ACTION: PHASES.needsUser,
+  LOGIN_ERROR: PHASES.loginError,
+};
+
 export function phaseOf(connection: Connection): RefreshPhase {
-  switch (connection.status) {
-    case "UPDATING":
-    case "MERGING":
-      return PHASES.updating;
-
-    case "UPDATED":
-      // `status` is authoritative here: a missing `executionStatus` on an item
-      // Pluggy calls UPDATED is not a reason to call the sync broken.
-      return connection.executionStatus === null || SUCCEEDED.has(connection.executionStatus)
-        ? PHASES.refreshed
-        : PHASES.failed;
-
-    // Undocumented as a `status`, yet Pluggy's own rate-limit page shows an item
-    // carrying it. Treated as the success it describes.
-    case "PARTIAL_SUCCESS":
-      return PHASES.refreshed;
-
-    case "WAITING_USER_INPUT":
-    case "WAITING_USER_ACTION":
-      return PHASES.needsUser;
-
-    case "LOGIN_ERROR":
-      return PHASES.loginError;
-
-    default:
-      return PHASES.failed;
+  if (connection.status === "UPDATED") {
+    return updatedPhase(connection.executionStatus);
   }
+
+  return PHASE_BY_STATUS[connection.status] ?? PHASES.failed;
 }
 
+/**
+ * `status` is authoritative here: a missing `executionStatus` on an item Pluggy
+ * calls UPDATED is not a reason to call the sync broken.
+ */
+function updatedPhase(executionStatus: string | null): RefreshPhase {
+  return executionStatus === null || SUCCEEDED.has(executionStatus) ? PHASES.refreshed : PHASES.failed;
+}
+
+// Stryker disable StringLiteral: spinner text, not behaviour — asserting each label would pin wording no caller reads
 const STAGES: Readonly<Record<string, string>> = {
   CREATED: "starting",
   CREATING: "starting",
@@ -186,6 +188,7 @@ const STAGES: Readonly<Record<string, string>> = {
   SUCCESS: "done",
   PARTIAL_SUCCESS: "done, with warnings",
 };
+// Stryker restore StringLiteral
 
 /**
  * What to put next to the spinner. An unrecognised stage is shown in the

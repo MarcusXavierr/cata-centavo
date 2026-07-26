@@ -1,4 +1,7 @@
-import type { Migration } from "./db.ts";
+export type Migration = {
+  readonly to: number;
+  readonly up: string;
+};
 
 /**
  * Both chains are empty, and that is not an oversight.

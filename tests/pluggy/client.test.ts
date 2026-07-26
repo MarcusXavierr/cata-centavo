@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  createPluggyClient,
-  KEY_MARGIN_MS,
-  RATE_LIMIT_RETRIES,
-  slidingWindowLimiter,
-} from "../../src/pluggy/client.ts";
+import { createPluggyClient } from "../../src/pluggy/client.ts";
+import { KEY_MARGIN_MS, RATE_LIMIT_RETRIES } from "../../src/pluggy/transport.ts";
 import { AuthError, HttpError, NotFoundError, RateLimitError, ResponseShapeError } from "../../src/pluggy/errors.ts";
 import { fakeFetch, fakeJwt, json, type FakeFetch, type Handler } from "../fakes/fake-fetch.ts";
 import { fixedClock, type FixedClock } from "../fakes/fixed-clock.ts";
@@ -148,6 +144,23 @@ describe("createPluggyClient", () => {
     clock.advance(2 * 60_000);
     await client.getConnection(ID);
     assert.equal(authCount(), 2, "still using a key inside the margin");
+  });
+
+  /**
+   * Found by mutation testing: `now + KEY_FALLBACK_LIFETIME_MS` could be flipped
+   * to `now -` with the whole suite still green. A key Pluggy hands us that is
+   * not a JWT would then be born expired, and the client would re-authenticate
+   * on every single request instead of once.
+   */
+  it("falls back to a future expiry for a key with no exp claim, not a past one", async () => {
+    const { client, authCount } = harness((request) =>
+      isAuth(request) ? json({ apiKey: "opaque-key-that-is-not-a-jwt" }) : json(itemBody(ID)),
+    );
+
+    await client.getConnection(ID);
+    await client.getConnection(OTHER_ID);
+
+    assert.equal(authCount(), 1, "re-authenticated for every request, so the fallback expiry is in the past");
   });
 
   it("issues one POST /auth for concurrent cold requests", async () => {
@@ -588,40 +601,5 @@ describe("refreshConnection", () => {
 
     assert.equal(start.kind, "started");
     assert.deepEqual(slept, [1_000]);
-  });
-});
-
-describe("slidingWindowLimiter", () => {
-  function limiterHarness(limit: number, windowMs: number) {
-    const clock = fixedClock(NOW);
-    const slept: number[] = [];
-    const sleep = async (milliseconds: number): Promise<void> => {
-      slept.push(milliseconds);
-      clock.advance(milliseconds);
-    };
-
-    return { clock, slept, limiter: slidingWindowLimiter(clock, limit, windowMs, sleep) };
-  }
-
-  it("waits out the window once the limit is reached", async () => {
-    const { limiter, slept } = limiterHarness(2, 1000);
-
-    await limiter.acquire();
-    await limiter.acquire();
-    assert.deepEqual(slept, [], "waited before reaching the limit");
-
-    await limiter.acquire();
-    assert.deepEqual(slept, [1000]);
-  });
-
-  it("lets a request through once the old hits leave the window", async () => {
-    const { limiter, clock, slept } = limiterHarness(2, 1000);
-
-    await limiter.acquire();
-    await limiter.acquire();
-    clock.advance(1000);
-    await limiter.acquire();
-
-    assert.deepEqual(slept, []);
   });
 });

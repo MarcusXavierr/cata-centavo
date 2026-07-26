@@ -17,10 +17,18 @@ nvm use                  # reads .nvmrc → v24.15.0
 
 npm run dev              # run the CLI from source (node executes .ts directly)
 npm run typecheck        # tsc --noEmit — this is the linter, see below
-npm run lint             # eslint como sensor — avisos informam, erros reprovam
+npm run lint             # eslint as a sensor: warnings inform, errors fail
+npm run deps             # dependency-cruiser — architecture rules, errors fail
 npm test                 # node --test, finds tests/**/*.test.ts
 npm run test:watch
 npm run build            # tsc -p tsconfig.build.json → dist/
+```
+
+On demand, not part of the sequence above:
+
+```bash
+npm run mutation         # stryker over src/core + src/pluggy, then the agent report (~50s)
+npm run mutation:report  # re-render the last report without re-running
 ```
 
 Run a single test file or a single test:
@@ -30,7 +38,7 @@ node --test tests/cli/dispatch.test.ts
 node --test --test-name-pattern="unknown command"
 ```
 
-**Always run `npm run typecheck` before `npm run lint` before `npm test`.** Node strips types without checking them: `const x: number = "string"` runs fine. Without `tsc`, the project has no type checking at all. Typecheck first, then lint, then tests, then build — the same order CI uses.
+**Always run `npm run typecheck` before `npm run lint` before `npm run deps` before `npm test`.** Node strips types without checking them: `const x: number = "string"` runs fine. Without `tsc`, the project has no type checking at all. Typecheck first, then lint, then dependency rules, then tests, then build — the same order CI uses.
 
 ## Runtime constraints that bite
 
@@ -46,7 +54,7 @@ node --test --test-name-pattern="unknown command"
 src/
 ├── core/          business rules. no fetch, no sqlite, no SDK
 │   └── contracts.ts    interfaces core requires of whoever serves it
-├── pluggy/        client.ts · mapper.ts · errors.ts
+├── pluggy/        client.ts · transport.ts · mapper.ts · errors.ts · wire.ts
 ├── storage/       db.ts · schema.sql · store.ts
 ├── mcp/           server.ts · format.ts · tools/
 ├── cli/           init.ts · doctor.ts · dispatch.ts
@@ -55,7 +63,7 @@ src/
 tests/             mirrors src/, plus fakes/ and fixtures/
 ```
 
-**The rule holding it together:** `src/core/` imports nothing from `src/pluggy/`, `src/storage/` or `src/mcp/`. Contracts live in `core/contracts.ts` because the interface belongs to the consumer, not the implementer. This is currently convention, not enforcement — no tooling checks it.
+**The rule holding it together:** `src/core/` imports nothing from `src/pluggy/`, `src/storage/` or `src/mcp/`. Contracts live in `core/contracts.ts` because the interface belongs to the consumer, not the implementer. `.dependency-cruiser.js` enforces this, along with the cycle, orphan and composition-root rules that only exist in the graph.
 
 No `services/`, no `utils/`, no `ports/`/`adapters/`. Tests live in `tests/`, not colocated, which is what lets the build tsconfig be `include: ["src"]`.
 
@@ -71,9 +79,9 @@ No `services/`, no `utils/`, no `ports/`/`adapters/`. Tests live in `tests/`, no
 
 ### Code quality process
 
-1. `npm run typecheck` before `npm run lint` before `npm test` — the typecheck catches what the test runner never will.
-2. All three must pass before you consider a change done. CI runs typecheck → lint → test → build.
-3. Keep the devDependency list at two entries (`typescript`, `@types/node`) unless there is a decision to add a third. Dependency minimalism is a stated value of this project, not an accident.
+1. `npm run typecheck` before `npm run lint` before `npm run deps` before `npm test` — the typecheck catches what the test runner never will.
+2. All four must pass before you consider a change done. CI runs typecheck → lint → deps → test → build.
+3. The devDependency list grows only by a written decision in `docs/plans/`, recording what it costs and what it buys. Dependency minimalism is a stated value of this project (ADR §5), not an accident. It currently stands at seven: `typescript`, `@types/node`, `eslint`, `typescript-eslint`, `dependency-cruiser`, and the two Stryker packages.
 
 ### Comments
 
@@ -92,6 +100,7 @@ Run text through the `humanizer` skill when writing prose (docblocks, README, AD
 - `t.mock.timers` covers the injectable `Clock` and freshness rules; no fake-timer library.
 - Capture raw Pluggy JSON as fixtures in `tests/fixtures/` — but the repo is public, so never commit real statements.
 - **Every tool parameter needs a test proving it reaches the request.** The prior Go implementation shipped a declared filter that was parsed, validated and then never read.
+- **`npm run mutation` is what checks the rule above.** A green suite proves the tests ran, not that they assert. Run it when you have added or changed tests in `src/core/` or `src/pluggy/`, read the survivors, and either write the missing assertion or suppress with a reason (`// Stryker disable next-line <Mutator>: why`). It never fails the build. See `docs/plans/2026-07-26-mutation-testing-design.md`.
 
 ### MCP tool development
 
@@ -128,3 +137,6 @@ Research → Plan → Implement → Validate. Propose the approach and confirm i
 - Explicit over implicit: clear names over clever abstractions, direct dependencies over service locators.
 - When stuck, stop — the simple solution is usually right. When choosing, ask: "A (simple) vs B (flexible), which do you prefer?"
 - Batch independent work: parallel reads and searches in one message, related edits grouped.
+
+# Language
+Always use English in the code, comments and documentation.

@@ -95,6 +95,15 @@ function readItemIds(env: Env, problems: string[]): readonly string[] {
     return [];
   }
 
+  problems.push(...idProblems(name, ids));
+
+  return ids;
+}
+
+/** Both problems are reported, because a list can be malformed *and* repeat itself. */
+function idProblems(name: string, ids: readonly string[]): readonly string[] {
+  const problems: string[] = [];
+
   const malformed = ids.filter((id) => !ITEM_ID.test(id));
   if (malformed.length > 0) {
     problems.push(`${name} has ${malformed.length} entry that is not a connection id: ${malformed.join(", ")}`);
@@ -105,7 +114,7 @@ function readItemIds(env: Env, problems: string[]): readonly string[] {
     problems.push(`${name} lists a duplicate id: ${duplicates.join(", ")}`);
   }
 
-  return ids;
+  return problems;
 }
 
 export type System = {
