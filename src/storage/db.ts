@@ -3,18 +3,13 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { Paths } from "../config.ts";
-import { CACHE_MIGRATIONS, DATA_MIGRATIONS } from "./migrations.ts";
+import { CACHE_MIGRATIONS, DATA_MIGRATIONS, type Migration } from "./migrations.ts";
 
 /**
  * One step forward. `up` is executed as-is, and `to` becomes the file's
  * `PRAGMA user_version` once it commits. ADR §10 versions both files this way,
  * which costs no metadata table.
  */
-export type Migration = {
-  readonly to: number;
-  readonly up: string;
-};
-
 /**
  * What to do when the file disagrees with the code.
  *

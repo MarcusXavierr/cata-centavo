@@ -5,7 +5,8 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { after, describe, it } from "node:test";
 
-import { openDatabase, SchemaTooNewError, type Migration } from "../../src/storage/db.ts";
+import { openDatabase, SchemaTooNewError } from "../../src/storage/db.ts";
+import type { Migration } from "../../src/storage/migrations.ts";
 
 const V1: Migration = { to: 1, up: "CREATE TABLE note (id INTEGER PRIMARY KEY, body TEXT)" };
 const V2: Migration = { to: 2, up: "CREATE TABLE tag (id INTEGER PRIMARY KEY)" };

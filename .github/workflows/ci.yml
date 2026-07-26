@@ -29,6 +29,10 @@ jobs:
       # thresholds live in docs/plans/2026-07-26-eslint-and-logging-design.md.
       - run: npm run lint
 
+      # Architecture rules. Unlike lint, these fail the build: a broken layer is
+      # not a style opinion. See docs/plans/2026-07-26-dependency-rules-design.md.
+      - run: npm run deps
+
       - run: npm test
 
       - run: npm run build

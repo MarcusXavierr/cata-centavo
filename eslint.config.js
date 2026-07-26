@@ -49,16 +49,6 @@ export default tseslint.config(
   },
 
   {
-    files: ["src/core/**/*.ts"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        { patterns: ["**/pluggy/**", "**/storage/**", "**/mcp/**", "pluggy-sdk"] },
-      ],
-    },
-  },
-
-  {
     files: ["tests/**/*.ts"],
     rules: {
       "max-lines-per-function": "off",
