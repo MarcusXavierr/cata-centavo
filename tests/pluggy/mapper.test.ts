@@ -186,6 +186,43 @@ describe("toAccount", () => {
     assert.equal(limitCents - availableLimitCents, 342950);
   });
 
+  it("reports the utilization Pluggy sent, not the limit subtraction", () => {
+    const account = toAccount(accountFixture("accounts-credit-customized-limit"), conn);
+
+    assert.equal(account.amountCents, 9852);
+    assert.notEqual(account.amountCents, 344852, "utilization must come from Pluggy's balance");
+  });
+
+  it("prefers the cardholder's customized limit over the bank's headline limit", () => {
+    const account = toAccount(accountFixture("accounts-credit-customized-limit"), conn);
+
+    assert.ok(account.credit);
+    assert.equal(account.credit.limitCents, 210000);
+    assert.equal(account.credit.availableLimitCents, 200148);
+  });
+
+  it("falls back to creditLimit when no customized limit is reported", () => {
+    const account = toAccount(accountFixture("accounts-credit"), conn);
+
+    assert.ok(account.credit);
+    assert.equal(account.credit.limitCents, 320000);
+  });
+
+  it("drops unparseable dates instead of yielding an Invalid Date", () => {
+    const wire = accountFixture("accounts-credit");
+    assert.ok(wire.creditData);
+
+    for (const balanceDueDate of ["0001-01", "not-a-date"]) {
+      const account = toAccount(
+        { ...wire, creditData: { ...wire.creditData, balanceDueDate } },
+        conn,
+      );
+
+      assert.ok(account.credit);
+      assert.equal(account.credit.balanceDueDate, null);
+    }
+  });
+
   it("rejects an account type we do not recognise", () => {
     assert.throws(
       () => toAccount({ ...bankWire, type: "SOMETHING_NEW" }, conn),

@@ -4,7 +4,13 @@ import { describe, it } from "node:test";
 import { account, threeConnections } from "../../fakes/fake-bank.ts";
 import { fakeLogger } from "../../fakes/fake-logger.ts";
 import { fakeSource } from "../../fakes/fake-source.ts";
-import { handleGetAccounts, handleGetBalanceByAccount } from "../../../src/mcp/tools/accounts.ts";
+import {
+  handleGetAccounts,
+  handleGetBalanceByAccount,
+  registerGetAccounts,
+  registerGetBalanceByAccount,
+} from "../../../src/mcp/tools/accounts.ts";
+import { registerGetBalance } from "../../../src/mcp/tools/balance.ts";
 
 function payload(result: { readonly content: readonly { readonly type: string; readonly text?: string }[] }): unknown {
   return JSON.parse(message(result));
@@ -21,6 +27,24 @@ function message(result: { readonly content: readonly { readonly type: string; r
 
 describe("MCP account tools", () => {
   const log = fakeLogger();
+
+  it("never describes a credit figure as a bill or debt", () => {
+    const descriptions: string[] = [];
+    const server = {
+      registerTool(_name: string, options: { readonly description: string }): void {
+        descriptions.push(options.description);
+      },
+    };
+
+    registerGetAccounts(server as never, { source: fakeSource(), log });
+    registerGetBalanceByAccount(server as never, { source: fakeSource(), log });
+    registerGetBalance(server as never, { source: fakeSource(), log });
+
+    for (const description of descriptions) {
+      assert.doesNotMatch(description, /\bbill\b/i);
+      assert.doesNotMatch(description, /\bdebt\b/i);
+    }
+  });
 
   it("passes the requested account id through to the bank", async () => {
     const source = fakeSource();
@@ -87,7 +111,7 @@ describe("MCP account tools", () => {
           name: "Account acc-2",
           type: "CREDIT",
           subtype: "CREDIT_CARD",
-          balance: "123.45",
+          usedCredit: "123.45",
           currency: "BRL",
           lastUpdatedAt: "2026-07-25T09:00:00.000Z",
           credit: {
@@ -114,7 +138,7 @@ describe("MCP account tools", () => {
           name: "Account acc-6",
           type: "CREDIT",
           subtype: "CREDIT_CARD",
-          balance: "123.45",
+          usedCredit: "123.45",
           currency: "BRL",
           lastUpdatedAt: "2026-07-25T09:00:00.000Z",
           credit: {
@@ -132,6 +156,26 @@ describe("MCP account tools", () => {
         },
       ],
     });
+  });
+
+  it("publishes a credit card's figure as usedCredit, never as balance", async () => {
+    const result = await handleGetAccounts({ source: fakeSource(), log });
+    const accounts = payload(result) as { accounts: { type: string; usedCredit?: string; balance?: string }[] };
+    const credit = accounts.accounts.find((candidate) => candidate.type === "CREDIT");
+
+    assert.ok(credit !== undefined);
+    assert.equal(credit.usedCredit, "123.45");
+    assert.equal("balance" in credit, false);
+  });
+
+  it("still publishes a bank account's figure as balance", async () => {
+    const result = await handleGetAccounts({ source: fakeSource(), log });
+    const accounts = payload(result) as { accounts: { type: string; usedCredit?: string; balance?: string }[] };
+    const bank = accounts.accounts.find((candidate) => candidate.type === "BANK");
+
+    assert.ok(bank !== undefined);
+    assert.equal(bank.balance, "123.45");
+    assert.equal("usedCredit" in bank, false);
   });
 
   it("reports the config problems when the source is broken", async () => {

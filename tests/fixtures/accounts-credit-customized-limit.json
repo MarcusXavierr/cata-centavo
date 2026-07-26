@@ -1,0 +1,60 @@
+{
+  "total": 1,
+  "totalPages": 1,
+  "page": 1,
+  "results": [
+    {
+      "id": "account-credit-customized-fixture",
+      "itemId": "connection-fixture",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "Synthetic Customized Limit Card",
+      "marketingName": null,
+      "balance": 98.52,
+      "currencyCode": "BRL",
+      "bankData": null,
+      "creditData": {
+        "level": "GOLD",
+        "brand": "MASTERCARD",
+        "brandAdditionalInfo": null,
+        "balanceCloseDate": null,
+        "balanceDueDate": "2026-07-15",
+        "availableCreditLimit": 2001.48,
+        "balanceForeignCurrency": null,
+        "minimumPayment": 56.8248,
+        "creditLimit": 5450,
+        "isLimitFlexible": false,
+        "holderType": null,
+        "status": "ACTIVE",
+        "disaggregatedCreditLimits": [
+          {
+            "lineName": "OUTROS",
+            "usedAmount": 98.52,
+            "limitAmount": 5450,
+            "availableAmount": 2001.48,
+            "customizedLimitAmount": 9999,
+            "consolidationType": "CONSOLIDADO",
+            "creditLineLimitType": "OUTROS",
+            "identificationNumber": "0000",
+            "isLimitFlexible": false,
+            "usedAmountCurrencyCode": "BRL",
+            "limitAmountCurrencyCode": "BRL",
+            "availableAmountCurrencyCode": "BRL",
+            "customizedLimitAmountCurrencyCode": "BRL"
+          },
+          {
+            "lineName": "CREDITO_A_VISTA",
+            "creditLineLimitType": "LIMITE_CREDITO_TOTAL",
+            "customizedLimitAmount": 2100
+          }
+        ],
+        "additionalCards": null
+      },
+      "owner": null,
+      "number": "0000",
+      "taxNumber": null,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}

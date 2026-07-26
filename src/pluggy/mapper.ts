@@ -103,13 +103,25 @@ function toAccountType(type: string): Account["type"] {
   throw new ResponseShapeError(`Pluggy returned an unrecognised account type: ${type}`);
 }
 
+/**
+ * Selects the limit the cardholder actually has. Pluggy's available amount can
+ * be based on a customized limit rather than the bank's headline limit.
+ */
+function toLimitCents(creditData: NonNullable<WireAccount["creditData"]>): number | null {
+  const total = creditData.disaggregatedCreditLimits?.find(
+    (line) => line.creditLineLimitType === "LIMITE_CREDITO_TOTAL",
+  );
+
+  return toNullableCents(total?.customizedLimitAmount ?? creditData.creditLimit);
+}
+
 function toCreditDetails(creditData: WireAccount["creditData"]): CreditDetails | null {
   if (creditData === null || creditData === undefined) {
     return null;
   }
 
   return {
-    limitCents: toNullableCents(creditData.creditLimit),
+    limitCents: toLimitCents(creditData),
     availableLimitCents: toNullableCents(creditData.availableCreditLimit),
     balanceCloseDate: toDate(creditData.balanceCloseDate),
     balanceDueDate: toDate(creditData.balanceDueDate),
@@ -122,7 +134,12 @@ function toNullableCents(value: number | null | undefined): number | null {
 }
 
 function toDate(value: string | null | undefined): Date | null {
-  return value === null || value === undefined ? null : new Date(value);
+  if (value === null || value === undefined || /^\d{4}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 /**

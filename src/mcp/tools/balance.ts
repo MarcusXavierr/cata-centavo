@@ -15,13 +15,13 @@ export type ToolDeps = {
   readonly log: Logger;
 };
 
-const GET_BALANCE_DESCRIPTION = `Gets consolidated balances across all configured bank connections.
+export const GET_BALANCE_DESCRIPTION = `Gets consolidated figures across all configured bank connections.
 
 Use this tool when:
-- You need cash and debt totals without combining different kinds of balance.
+- You need total money available without mixing it with what cards have taken.
 - You need to know when each connection last supplied its account data.
 
-Returns: Separate cash and owed figures, investment and loan totals when reported, plus the currency, number of accounts counted, and source update times.`;
+Returns: \`cash\`, the money available across bank accounts, and \`creditUsed\`, the limit currently taken across cards — never added together, because they are not the same unit. Investment and loan totals when reported, plus the currency, how many accounts were counted, and each source's update time.`;
 
 /** Registers the consolidated balance tool. */
 export function registerGetBalance(server: McpServer, deps: ToolDeps): void {
@@ -95,7 +95,7 @@ function mixedCurrencyMessage(currencies: readonly string[]): string {
 function formatSummary(summary: Summary, accounts: readonly Account[]): unknown {
   return {
     cash: toDecimal(summary.cashCents),
-    owed: toDecimal(summary.owedCents),
+    creditUsed: toDecimal(summary.creditUsedCents),
     ...(summary.investedCents === undefined ? {} : { invested: toDecimal(summary.investedCents) }),
     ...(summary.loanCents === undefined ? {} : { loans: toDecimal(summary.loanCents) }),
     currency: summary.currency,

@@ -17,7 +17,7 @@ describe("summarize", () => {
         account("b", { type: "BANK", amountCents: 50_000 }),
         account("c", { type: "CREDIT", amountCents: 80_000 }),
       ],
-      expected: { cashCents: 200_000, owedCents: 80_000, currency: "BRL", accountsCounted: 3 },
+      expected: { cashCents: 200_000, creditUsedCents: 80_000, currency: "BRL", accountsCounted: 3 },
     },
     {
       why: "an exactly-zero balance is counted, not dropped",
@@ -25,7 +25,7 @@ describe("summarize", () => {
         account("a", { type: "BANK", amountCents: 0 }),
         account("b", { type: "BANK", amountCents: 30_000 }),
       ],
-      expected: { cashCents: 30_000, owedCents: 0, currency: "BRL", accountsCounted: 2 },
+      expected: { cashCents: 30_000, creditUsedCents: 0, currency: "BRL", accountsCounted: 2 },
     },
     {
       why: "a loan is kept apart from a card bill",
@@ -35,7 +35,7 @@ describe("summarize", () => {
       ],
       expected: {
         cashCents: 0,
-        owedCents: 80_000,
+        creditUsedCents: 80_000,
         loanCents: 2_200_000,
         currency: "BRL",
         accountsCounted: 2,
@@ -49,7 +49,7 @@ describe("summarize", () => {
       ],
       expected: {
         cashCents: 150_000,
-        owedCents: 0,
+        creditUsedCents: 0,
         investedCents: 80_000,
         currency: "BRL",
         accountsCounted: 2,
