@@ -1,0 +1,39 @@
+{
+  "total": 1,
+  "totalPages": 1,
+  "page": 1,
+  "results": [
+    {
+      "id": "account-credit-fixture",
+      "itemId": "connection-fixture",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "Synthetic Credit Card",
+      "marketingName": null,
+      "balance": 265.5,
+      "currencyCode": "BRL",
+      "bankData": null,
+      "creditData": {
+        "level": null,
+        "brand": "MASTERCARD",
+        "brandAdditionalInfo": null,
+        "balanceCloseDate": null,
+        "balanceDueDate": "2026-08-15",
+        "availableCreditLimit": 2934.5,
+        "balanceForeignCurrency": null,
+        "minimumPayment": null,
+        "creditLimit": 3200,
+        "isLimitFlexible": null,
+        "holderType": null,
+        "status": null,
+        "disaggregatedCreditLimits": null,
+        "additionalCards": null
+      },
+      "owner": null,
+      "number": "0000",
+      "taxNumber": null,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}

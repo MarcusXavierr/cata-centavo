@@ -1,0 +1,33 @@
+{
+  "total": 1,
+  "totalPages": 1,
+  "page": 1,
+  "results": [
+    {
+      "id": "account-bank-fixture",
+      "itemId": "connection-fixture",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Synthetic Checking Account",
+      "marketingName": null,
+      "balance": 123.45,
+      "currencyCode": "BRL",
+      "bankData": {
+        "transferNumber": "000/0000/00000000-0",
+        "closingBalance": null,
+        "automaticallyInvestedBalance": null,
+        "overdraftContractedLimit": null,
+        "overdraftUsedLimit": null,
+        "unarrangedOverdraftAmount": null,
+        "hasReservedBalance": null,
+        "reservedBalances": null
+      },
+      "creditData": null,
+      "owner": "Synthetic Account Owner",
+      "number": "000000000",
+      "taxNumber": "000.000.000-00",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}

@@ -2,8 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createPluggyClient } from "../../src/pluggy/client.ts";
-import { KEY_MARGIN_MS, RATE_LIMIT_RETRIES } from "../../src/pluggy/transport.ts";
-import { AuthError, HttpError, NotFoundError, RateLimitError, ResponseShapeError } from "../../src/pluggy/errors.ts";
+import { RATE_LIMIT_RETRIES } from "../../src/pluggy/transport.ts";
+import {
+  AuthError,
+  HttpError,
+  NotFoundError,
+  PluggyError,
+  RateLimitError,
+  ResponseShapeError,
+  toFailure,
+} from "../../src/pluggy/errors.ts";
 import { fakeFetch, fakeJwt, json, type FakeFetch, type Handler } from "../fakes/fake-fetch.ts";
 import { fixedClock, type FixedClock } from "../fakes/fixed-clock.ts";
 import { fakeLogger } from "../fakes/fake-logger.ts";
@@ -26,6 +34,24 @@ function itemBody(id: string, overrides: Record<string, unknown> = {}): unknown 
     consecutiveFailedLoginAttempts: 0,
     ...overrides,
   };
+}
+
+function accountBody(id: string, itemId = ID): unknown {
+  return {
+    id,
+    itemId,
+    type: "BANK",
+    subtype: "CHECKING_ACCOUNT",
+    name: `Account ${id}`,
+    marketingName: null,
+    balance: 123.45,
+    currencyCode: "BRL",
+    creditData: null,
+  };
+}
+
+function accountPage(page: number, totalPages: number, results: readonly unknown[]): unknown {
+  return { total: results.length * totalPages, totalPages, page, results };
 }
 
 function isAuth(request: { url: string }): boolean {
@@ -94,6 +120,7 @@ describe("createPluggyClient", () => {
     const [auth, item] = fetch.requests;
     assert.equal(auth?.method, "POST");
     assert.equal(auth?.url, `${BASE_URL}/auth`);
+    assert.equal(auth?.contentType, "application/json");
     assert.deepEqual(auth?.body, { clientId: "client-id", clientSecret: "client-secret" });
     assert.equal(auth?.apiKey, null, "credentials must not be sent as an API key");
 
@@ -122,6 +149,71 @@ describe("createPluggyClient", () => {
     assert.equal((await client.getConnection(ID)).lastUpdatedAt, null);
   });
 
+  it("follows every page to the reported totalPages", async () => {
+    const { client, fetch } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+
+      const url = new URL(request.url);
+      if (url.pathname === "/items/" + ID) {
+        return json(itemBody(ID));
+      }
+
+      const page = url.searchParams.get("page");
+      return json(accountPage(Number(page), 2, [accountBody(`account-${page}`)]));
+    });
+
+    const accounts = await client.getAccounts(ID);
+
+    assert.deepEqual(
+      accounts.map((account) => account.id),
+      ["account-1", "account-2"],
+    );
+    const accountRequests = fetch.requests.filter((request) => new URL(request.url).pathname === "/accounts");
+    assert.equal(accountRequests.length, 2);
+    assert.deepEqual(
+      accountRequests.map((request) => new URL(request.url).searchParams.get("pageSize")),
+      ["500", "500"],
+    );
+  });
+
+  it("asks for the item as well as the accounts", async () => {
+    const { client, fetch } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+
+      return new URL(request.url).pathname === "/items/" + ID
+        ? json(itemBody(ID))
+        : json(accountPage(1, 1, [accountBody("account-1")]));
+    });
+
+    await client.getAccounts(ID);
+
+    const item = fetch.requests.find((request) => new URL(request.url).pathname === "/items/" + ID);
+    const accounts = fetch.requests.find((request) => new URL(request.url).pathname === "/accounts");
+    assert.ok(item);
+    assert.equal(new URL(accounts?.url ?? "").searchParams.get("itemId"), ID);
+  });
+
+  it("puts the requested account id in the path", async () => {
+    const { client, fetch } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+
+      return new URL(request.url).pathname === "/accounts/acc-1" ? json(accountBody("acc-1")) : json(itemBody(ID));
+    });
+
+    await client.getAccount("acc-1");
+
+    const read = fetch.requests.find((request) => request.url.includes("/accounts/"));
+    const owner = fetch.requests.find((request) => request.url.includes("/items/"));
+    assert.match(read?.url ?? "", /\/accounts\/acc-1(\?|$)/);
+    assert.match(owner?.url ?? "", new RegExp(`/items/${ID}$`));
+  });
+
   it("reuses the cached key across requests", async () => {
     const { client, authCount } = harness();
 
@@ -137,13 +229,13 @@ describe("createPluggyClient", () => {
     await client.getConnection(ID);
     assert.equal(authCount(), 1);
 
-    clock.advance(KEY_LIFETIME_MS - KEY_MARGIN_MS - 60_000);
+    clock.advance(KEY_LIFETIME_MS - 10 * 60 * 1000 - 60_000);
     await client.getConnection(ID);
     assert.equal(authCount(), 1, "renewed before the margin was reached");
 
-    clock.advance(2 * 60_000);
+    clock.advance(60_000);
     await client.getConnection(ID);
-    assert.equal(authCount(), 2, "still using a key inside the margin");
+    assert.equal(authCount(), 2, "still using a key at the renewal margin");
   });
 
   /**
@@ -161,6 +253,19 @@ describe("createPluggyClient", () => {
     await client.getConnection(OTHER_ID);
 
     assert.equal(authCount(), 1, "re-authenticated for every request, so the fallback expiry is in the past");
+  });
+
+  it("uses a JWT expiry that is shorter than the fallback lifetime", async () => {
+    const expiresAt = new Date(NOW.getTime() + 45 * 60 * 1000);
+    const { client, clock, authCount } = harness((request) =>
+      isAuth(request) ? json({ apiKey: fakeJwt(expiresAt) }) : json(itemBody(ID)),
+    );
+
+    await client.getConnection(ID);
+    clock.advance(35 * 60 * 1000);
+    await client.getConnection(ID);
+
+    assert.equal(authCount(), 2, "ignored the JWT expiry and used the fallback lifetime");
   });
 
   it("issues one POST /auth for concurrent cold requests", async () => {
@@ -221,26 +326,127 @@ describe("createPluggyClient", () => {
       isAuth(request) ? json({ message: "bad credentials" }, 401) : json(itemBody(ID)),
     );
 
-    await assert.rejects(client.verifyCredentials(), AuthError);
+    await assert.rejects(
+      client.verifyCredentials(),
+      (error: unknown) => error instanceof AuthError && /authenticating.*PLUGGY_CLIENT_ID/.test(error.message),
+    );
     assert.equal(authCount(), 1);
+  });
+
+  it("names a malformed auth response", async () => {
+    const { client } = harness((request) => (isAuth(request) ? json({ apiKey: null }) : json(itemBody(ID))));
+
+    await assert.rejects(
+      client.verifyCredentials(),
+      (error: unknown) => error instanceof ResponseShapeError && /the \/auth response did not match/.test(error.message),
+    );
   });
 
   it("maps the status codes onto distinguishable errors", async () => {
     const cases = [
-      { status: 404, expected: NotFoundError },
-      { status: 429, expected: RateLimitError },
-      { status: 500, expected: HttpError },
+      { status: 401, expected: AuthError, kind: "auth", message: /PLUGGY_CLIENT_ID/ },
+      { status: 403, expected: AuthError, kind: "auth", message: /PLUGGY_CLIENT_ID/ },
+      { status: 404, expected: NotFoundError, kind: "unknown-connection", message: /wrong id/ },
+      { status: 429, expected: RateLimitError, kind: "rate-limited", message: new RegExp(`connection ${ID}`) },
+      {
+        status: 500,
+        expected: HttpError,
+        kind: "unavailable",
+        message: new RegExp(`Pluggy returned 500 while connection ${ID} — no`),
+      },
     ];
 
-    for (const { status, expected } of cases) {
+    for (const { status, expected, kind, message } of cases) {
       const { client } = harness((request) =>
         isAuth(request)
           ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
           : json({ message: "no" }, status),
       );
 
-      await assert.rejects(client.getConnection(ID), expected, `status ${status}`);
+      await assert.rejects(
+        client.getConnection(ID),
+        (error: unknown) => {
+          if (!(error instanceof expected) || error.kind !== kind) return false;
+          assert.match(error.message, message);
+          return true;
+        },
+        `status ${status}`,
+      );
     }
+  });
+
+  it("identifies the failed endpoint in account lookups", async () => {
+    const cases: readonly {
+      readonly why: string;
+      readonly request: (client: ReturnType<typeof createPluggyClient>) => Promise<unknown>;
+      readonly response: Handler;
+      readonly message: RegExp;
+    }[] = [
+      {
+        why: "the connection read before an account list",
+        request: (client) => client.getAccounts(ID),
+        response: (request) =>
+          request.url.endsWith(`/items/${ID}`) ? json({ message: "unavailable" }, 500) : json(accountPage(1, 1, [])),
+        message: new RegExp(`connection ${ID}`),
+      },
+      {
+        why: "the first account-list page",
+        request: (client) => client.getAccounts(ID),
+        response: (request) =>
+          request.url.endsWith(`/items/${ID}`) ? json(itemBody(ID)) : json({ message: "unavailable" }, 500),
+        message: new RegExp(`accounts ${ID}`),
+      },
+      {
+        why: "a later account-list page",
+        request: (client) => client.getAccounts(ID),
+        response: (request) => {
+          if (request.url.endsWith(`/items/${ID}`)) return json(itemBody(ID));
+          if (request.url.includes("page=1")) return json(accountPage(1, 2, [accountBody("first")]));
+          return json({ message: "unavailable" }, 500);
+        },
+        message: new RegExp(`accounts ${ID}`),
+      },
+      {
+        why: "an account read",
+        request: (client) => client.getAccount("account-1"),
+        response: () => json({ message: "unavailable" }, 500),
+        message: /account account-1/,
+      },
+      {
+        why: "the account owner's connection read",
+        request: (client) => client.getAccount("account-1"),
+        response: (request) =>
+          request.url.endsWith("/accounts/account-1")
+            ? json(accountBody("account-1"))
+            : json({ message: "unavailable" }, 500),
+        message: new RegExp(`connection ${ID}`),
+      },
+    ];
+
+    for (const { why, request, response, message } of cases) {
+      const { client } = harness((fetchRequest, index) =>
+        isAuth(fetchRequest)
+          ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
+          : response(fetchRequest, index),
+      );
+
+      await assert.rejects(request(client), (error: Error) => {
+        assert.match(error.message, message, why);
+        return true;
+      });
+    }
+  });
+
+  it("preserves a Pluggy failure's kind and message", () => {
+    const error = new PluggyError("Pluggy is unavailable", "unavailable", 503);
+
+    assert.deepEqual(toFailure(error), { kind: "unavailable", message: "Pluggy is unavailable" });
+  });
+
+  it("turns an unknown failure into an unavailable failure", () => {
+    const error = new Error("network interrupted");
+
+    assert.deepEqual(toFailure(error), { kind: "unavailable", message: String(error) });
   });
 
   it("waits out a 429 on a read too, since both paths share the send function", async () => {
@@ -254,7 +460,20 @@ describe("createPluggyClient", () => {
 
     assert.deepEqual(slept, Array.from({ length: RATE_LIMIT_RETRIES }, () => 3_000));
     assert.equal(fetch.requests.filter((request) => !isAuth(request)).length, RATE_LIMIT_RETRIES + 1);
-    assert.equal(log.lines.filter((line) => line.level === "warn").length, RATE_LIMIT_RETRIES);
+    assert.ok(fetch.requests.filter((request) => !isAuth(request)).every((request) => request.apiKey !== null));
+    assert.deepEqual(
+      log.lines.filter((line) => line.level === "warn"),
+      Array.from({ length: RATE_LIMIT_RETRIES }, (_, index) => ({
+        level: "warn",
+        fields: {
+          method: "GET",
+          path: `/items/${ID}`,
+          attempt: index + 1,
+          maxRetries: RATE_LIMIT_RETRIES,
+        },
+        message: "rate limit response; retrying",
+      })),
+    );
     assert.doesNotMatch(JSON.stringify(log.lines), /client-secret/);
   });
 
@@ -265,7 +484,53 @@ describe("createPluggyClient", () => {
         : json({ id: ID, connector: "Nubank" }),
     );
 
-    await assert.rejects(client.getConnection(ID), ResponseShapeError);
+    await assert.rejects(
+      client.getConnection(ID),
+      (error: unknown) =>
+        error instanceof ResponseShapeError &&
+        error.kind === "bad-response" &&
+        /connection .* did not match the shape we expect, at: connector/.test(error.message),
+    );
+  });
+
+  it("rejects a successful response that is not JSON", async () => {
+    const { client } = harness((request) =>
+      isAuth(request)
+        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
+        : new Response("<html>gateway</html>", { status: 200 }),
+    );
+
+    await assert.rejects(
+      client.getConnection(ID),
+      (error: unknown) => error instanceof ResponseShapeError && /body that is not JSON/.test(error.message),
+    );
+  });
+
+  it("names every malformed field in a successful item response", async () => {
+    const { client } = harness((request) =>
+      isAuth(request)
+        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
+        : json(itemBody(ID, { connector: {}, parameter: {} })),
+    );
+
+    await assert.rejects(client.getConnection(ID), (error: Error) => {
+      assert.equal(
+        error.message,
+        `connection ${ID} did not match the shape we expect, at: connector.name, parameter.name, parameter.label`,
+      );
+      return true;
+    });
+  });
+
+  it("names a root-level item response mismatch", async () => {
+    const { client } = harness((request) =>
+      isAuth(request) ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) }) : json(null),
+    );
+
+    await assert.rejects(client.getConnection(ID), (error: Error) => {
+      assert.equal(error.message, `connection ${ID} did not match the shape we expect, at: (root)`);
+      return true;
+    });
   });
 
   it("passes every request through the limiter, auth included", async () => {
@@ -336,6 +601,16 @@ describe("createPluggyClient", () => {
     ]);
   });
 
+  it("ignores an advisory product without status details", async () => {
+    const { client } = harness((request) =>
+      isAuth(request)
+        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
+        : json(itemBody(ID, { statusDetail: { accounts: null } })),
+    );
+
+    assert.deepEqual((await client.getConnection(ID)).warnings, []);
+  });
+
   it("survives a statusDetail shaped in a way we did not predict", async () => {
     const { client } = harness((request) =>
       isAuth(request)
@@ -364,8 +639,10 @@ describe("createPluggyClient", () => {
     );
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
-      assert.match(error.message, /CONNECTOR_REQUIRED_PARAMETER_VALIDATION_ERROR/);
-      assert.match(error.message, /'token' is required to be renewed/);
+      assert.equal(
+        error.message,
+        `Pluggy returned 400 while connection ${ID} — CONNECTOR_REQUIRED_PARAMETER_VALIDATION_ERROR: The parameter 'token' is required to be renewed for item update.`,
+      );
       return true;
     });
   });
@@ -399,9 +676,48 @@ describe("createPluggyClient", () => {
     );
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
-      assert.match(error.message, /502/);
+      assert.equal(error.message, `Pluggy returned 502 while connection ${ID}`);
       return true;
     });
+  });
+
+  it("keeps the custom not-found message instead of Pluggy's envelope", async () => {
+    const { client } = harness((request) =>
+      isAuth(request)
+        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
+        : json({ message: "wrong account" }, 404),
+    );
+
+    await assert.rejects(client.getConnection(ID), (error: Error) => {
+      assert.equal(error.message, "not found — wrong id, or an id belonging to another Pluggy account");
+      return true;
+    });
+  });
+
+  it("omits null fields from Pluggy's unavailable-error detail", async () => {
+    const cases = [
+      {
+        body: { codeDescription: null, message: "temporarily unavailable", data: null },
+        expected: `Pluggy returned 503 while connection ${ID} — temporarily unavailable`,
+      },
+      {
+        body: { codeDescription: null, message: null, data: { canRetryAfterDate: null } },
+        expected: `Pluggy returned 503 while connection ${ID}`,
+      },
+    ];
+
+    for (const { body, expected } of cases) {
+      const { client } = harness((request) =>
+        isAuth(request)
+          ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
+          : json(body, 503),
+      );
+
+      await assert.rejects(client.getConnection(ID), (error: Error) => {
+        assert.equal(error.message, expected);
+        return true;
+      });
+    }
   });
 
   it("falls back to a minute when the 429 names no delay", async () => {
@@ -409,6 +725,18 @@ describe("createPluggyClient", () => {
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : json({ message: "slow down" }, 429),
+    );
+
+    await assert.rejects(client.getConnection(ID), RateLimitError);
+
+    assert.deepEqual(slept, Array.from({ length: RATE_LIMIT_RETRIES }, () => 60_000));
+  });
+
+  it("falls back to a minute when the 429 names a zero delay", async () => {
+    const { client, slept } = harness((request) =>
+      isAuth(request)
+        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
+        : json({ message: "slow down" }, 429, { "retry-after": "0" }),
     );
 
     await assert.rejects(client.getConnection(ID), RateLimitError);

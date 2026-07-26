@@ -1,5 +1,6 @@
 import type { z } from "zod";
 
+import type { BankFailure, FailureKind } from "../core/contracts.ts";
 import { API_ERROR } from "./wire.ts";
 
 /**
@@ -21,25 +22,43 @@ import { API_ERROR } from "./wire.ts";
 
 export class PluggyError extends Error {
   readonly status: number | undefined;
+  readonly kind: FailureKind;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, kind: FailureKind, status?: number) {
     super(message);
     this.name = new.target.name;
+    this.kind = kind;
     this.status = status;
   }
 }
 
 /** Credentials refused, or a key that could not be renewed. */
-export class AuthError extends PluggyError {}
+export class AuthError extends PluggyError {
+  constructor(message: string, status?: number) {
+    super(message, "auth", status);
+  }
+}
 
 /** The resource does not exist, or belongs to another Pluggy account. */
-export class NotFoundError extends PluggyError {}
+export class NotFoundError extends PluggyError {
+  constructor(message: string, status?: number) {
+    super(message, "unknown-connection", status);
+  }
+}
 
 /** Rate limited. Recoverable by waiting; see the limiter in `transport.ts`. */
-export class RateLimitError extends PluggyError {}
+export class RateLimitError extends PluggyError {
+  constructor(message: string, status?: number) {
+    super(message, "rate-limited", status);
+  }
+}
 
 /** Any other non-2xx response. */
-export class HttpError extends PluggyError {}
+export class HttpError extends PluggyError {
+  constructor(message: string, status?: number) {
+    super(message, "unavailable", status);
+  }
+}
 
 /**
  * A 2xx body that does not match what we expected. Separate from `HttpError`
@@ -47,7 +66,20 @@ export class HttpError extends PluggyError {}
  * Phase 0.5 step 5 warns about, where trusting a shape we never checked deletes
  * the evidence before a human sees it.
  */
-export class ResponseShapeError extends PluggyError {}
+export class ResponseShapeError extends PluggyError {
+  constructor(message: string, status?: number) {
+    super(message, "bad-response", status);
+  }
+}
+
+/** Turns a thrown boundary error into the core's portable failure contract. */
+export function toFailure(error: unknown): BankFailure {
+  if (error instanceof PluggyError) {
+    return { kind: error.kind, message: error.message };
+  }
+
+  return { kind: "unavailable", message: String(error) };
+}
 
 /**
  * Which failure this is, decided once. §16.4 requires choosing per case between
