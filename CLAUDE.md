@@ -24,6 +24,13 @@ npm run test:watch
 npm run build            # tsc -p tsconfig.build.json → dist/
 ```
 
+On demand, not part of the sequence above:
+
+```bash
+npm run mutation         # stryker over src/core + src/pluggy, then the agent report (~50s)
+npm run mutation:report  # re-render the last report without re-running
+```
+
 Run a single test file or a single test:
 
 ```bash
@@ -74,7 +81,7 @@ No `services/`, no `utils/`, no `ports/`/`adapters/`. Tests live in `tests/`, no
 
 1. `npm run typecheck` before `npm run lint` before `npm run deps` before `npm test` — the typecheck catches what the test runner never will.
 2. All four must pass before you consider a change done. CI runs typecheck → lint → deps → test → build.
-3. Keep the devDependency list at two entries (`typescript`, `@types/node`) unless there is a decision to add a third. Dependency minimalism is a stated value of this project, not an accident.
+3. The devDependency list grows only by a written decision in `docs/plans/`, recording what it costs and what it buys. Dependency minimalism is a stated value of this project (ADR §5), not an accident. It currently stands at seven: `typescript`, `@types/node`, `eslint`, `typescript-eslint`, `dependency-cruiser`, and the two Stryker packages.
 
 ### Comments
 
@@ -93,6 +100,7 @@ Run text through the `humanizer` skill when writing prose (docblocks, README, AD
 - `t.mock.timers` covers the injectable `Clock` and freshness rules; no fake-timer library.
 - Capture raw Pluggy JSON as fixtures in `tests/fixtures/` — but the repo is public, so never commit real statements.
 - **Every tool parameter needs a test proving it reaches the request.** The prior Go implementation shipped a declared filter that was parsed, validated and then never read.
+- **`npm run mutation` is what checks the rule above.** A green suite proves the tests ran, not that they assert. Run it when you have added or changed tests in `src/core/` or `src/pluggy/`, read the survivors, and either write the missing assertion or suppress with a reason (`// Stryker disable next-line <Mutator>: why`). It never fails the build. See `docs/plans/2026-07-26-mutation-testing-design.md`.
 
 ### MCP tool development
 

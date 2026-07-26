@@ -164,6 +164,7 @@ function updatedPhase(executionStatus: string | null): RefreshPhase {
   return executionStatus === null || SUCCEEDED.has(executionStatus) ? PHASES.refreshed : PHASES.failed;
 }
 
+// Stryker disable StringLiteral: spinner text, not behaviour — asserting each label would pin wording no caller reads
 const STAGES: Readonly<Record<string, string>> = {
   CREATED: "starting",
   CREATING: "starting",
@@ -187,6 +188,7 @@ const STAGES: Readonly<Record<string, string>> = {
   SUCCESS: "done",
   PARTIAL_SUCCESS: "done, with warnings",
 };
+// Stryker restore StringLiteral
 
 /**
  * What to put next to the spinner. An unrecognised stage is shown in the

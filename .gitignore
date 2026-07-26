@@ -8,6 +8,8 @@ dist/
 # test artifacts
 coverage/
 .nyc_output/
+.stryker-tmp/
+reports/
 
 # local data and secrets — NEVER commit (ADR §9, §10)
 # cache.db holds the full financial history in plaintext; *.key is the 0600

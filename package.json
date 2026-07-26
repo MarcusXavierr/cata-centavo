@@ -42,6 +42,8 @@
     "deps": "depcruise src tests --output-type plugin:$PWD/tools/depcruise-reporter-agent.js",
     "test": "node --test",
     "test:watch": "node --test --watch",
+    "mutation": "stryker run && npm run mutation:report",
+    "mutation:report": "node tools/stryker-report-agent.js",
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "prepublishOnly": "npm run typecheck && npm run lint && npm run deps && npm test"
@@ -54,6 +56,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/tap-runner": "^9.6.1",
     "@types/node": "^24.13.3",
     "dependency-cruiser": "^18.1.0",
     "eslint": "^10.8.0",
