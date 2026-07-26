@@ -2,11 +2,16 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
 import { COMMANDS, resolveInvocation, type Command } from "../cli/dispatch.ts";
 import { exitCodeFor, formatInit, runInit, type StorageInfo } from "../cli/init.ts";
-import { resolvePaths } from "../config.ts";
+import { loadConfig, resolvePaths } from "../config.ts";
 import { createLogger } from "../logging.ts";
+import { createServer } from "../mcp/server.ts";
+import type { Source } from "../mcp/source.ts";
 import { createPluggyClient } from "../pluggy/client.ts";
+import { toFailure } from "../pluggy/errors.ts";
 import { openDatabases, schemaVersion } from "../storage/db.ts";
 
 const USAGE = `cata-centavo — Brazilian Open Finance over MCP
@@ -93,6 +98,30 @@ async function run(command: Command): Promise<number> {
     }
 
     return exitCodeFor(report);
+  }
+
+  if (command === COMMANDS.serve) {
+    const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
+    const log = createLogger({ env: process.env, logFile: paths.logFile });
+    const result = loadConfig(process.env);
+
+    const source: Source = result.ok
+      ? {
+          ok: true,
+          connections: result.config.itemIds,
+          bank: createPluggyClient({
+            credentials: result.config.credentials,
+            clock: systemClock,
+            fetch: globalThis.fetch,
+            sleep,
+            log,
+          }),
+          toFailure,
+        }
+      : { ok: false, problems: result.problems };
+
+    await createServer({ source, version: readVersion(), log }).connect(new StdioServerTransport());
+    return 0;
   }
 
   // Phases 1 and 7 of the roadmap (ADR §15).
