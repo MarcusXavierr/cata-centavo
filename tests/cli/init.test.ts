@@ -9,9 +9,8 @@ import {
   type InitDeps,
   type InitReport,
 } from "../../src/cli/init.ts";
-import type { Row } from "../../src/cli/progress.ts";
 import { HttpError } from "../../src/pluggy/errors.ts";
-import { connection, fakeBank, updating, type FakeBankOptions } from "../fakes/fake-bank.ts";
+import { connection, fakeBank, type FakeBankOptions } from "../fakes/fake-bank.ts";
 import { fixedClock } from "../fakes/fixed-clock.ts";
 
 const NOW = new Date("2026-07-25T12:00:00.000Z");
@@ -36,7 +35,6 @@ const STORAGE = {
 function deps(env: Record<string, string | undefined>, bank: FakeBankOptions, storageFailure?: Error) {
   const built: string[] = [];
   const prepared: string[] = [];
-  const frames: Row[][] = [];
   const instance = fakeBank(bank);
 
   const initDeps: InitDeps = {
@@ -52,21 +50,17 @@ function deps(env: Record<string, string | undefined>, bank: FakeBankOptions, st
       }
       return STORAGE;
     },
-    sleep: async () => {},
-    report: (rows) => {
-      frames.push([...rows]);
-    },
   };
 
-  return { initDeps, built, prepared, instance, frames };
+  return { initDeps, built, prepared, instance };
 }
 
 /** The report, plus its lines, for the common single-connection case. */
 async function report(bank: FakeBankOptions, env = ONLY_A) {
-  const { initDeps, instance, frames } = deps(env, bank);
+  const { initDeps, instance } = deps(env, bank);
   const result = await runInit(initDeps);
 
-  return { result, instance, frames, text: formatInit(result, fixedClock(NOW)).join("\n") };
+  return { result, instance, text: formatInit(result, fixedClock(NOW)).join("\n") };
 }
 
 function outcomes(result: InitReport): readonly ConnectionOutcome[] {
@@ -96,7 +90,7 @@ describe("runInit", () => {
     assert.match(formatInit(result, fixedClock(NOW)).join("\n"), /schema version 4/);
   });
 
-  it("stops at refused credentials instead of asking every bank to sync", async () => {
+  it("stops at refused credentials instead of reading every connection", async () => {
     const { initDeps, instance } = deps(ENV, { credentialsRejected: "Pluggy refused the credentials" });
 
     const result = await runInit(initDeps);
@@ -106,73 +100,28 @@ describe("runInit", () => {
     assert.equal(exitCodeFor(result), 1);
   });
 
-  it("asks for a sync even when the connection looks fresh", async () => {
-    const { instance, result } = await report({
-      connections: [connection(ID_A, { lastUpdatedAt: new Date(NOW.getTime() - 60_000) })],
-    });
-
-    assert.ok(instance.calls.includes(`refresh ${ID_A}`), "trusted a timestamp instead of asking");
-    assert.equal(outcomes(result)[0]?.kind, "refreshed");
-  });
-
-  it("refreshes every id it can, and one bad id does not stop the rest", async () => {
+  it("reads every configured id, and one bad id does not stop the rest", async () => {
     const { initDeps, instance } = deps(ENV, { connections: [connection(ID_A)] });
 
     const result = await runInit(initDeps);
 
-    assert.ok(instance.calls.includes(`refresh ${ID_A}`));
-    assert.ok(!instance.calls.includes(`refresh ${ID_B}`), "asked an unknown id to sync");
+    assert.ok(instance.calls.includes(ID_A));
+    assert.ok(instance.calls.includes(ID_B), "gave up before reading the second id");
     assert.deepEqual(
       outcomes(result).map((outcome) => [outcome.id, outcome.kind]),
       [
-        [ID_A, "refreshed"],
+        [ID_A, "usable"],
         [ID_B, "failed"],
       ],
     );
     assert.equal(exitCodeFor(result), 1);
   });
 
-  it("polls a sync it started through to the end", async () => {
-    const { result, instance } = await report({
-      polls: {
-        [ID_A]: [updating(ID_A, "LOGIN_IN_PROGRESS"), updating(ID_A, "TRANSACTIONS_IN_PROGRESS"), connection(ID_A)],
-      },
-      refreshes: { [ID_A]: { kind: "started", connection: updating(ID_A, "CREATED") } },
-    });
+  it("reads each connection once, since nothing is waited on", async () => {
+    const { instance, result } = await report({ connections: [connection(ID_A)] });
 
-    // One read to validate the id, then two more to follow the sync to UPDATED.
-    assert.equal(outcomes(result)[0]?.kind, "refreshed");
-    assert.equal(instance.calls.filter((call) => call === ID_A).length, 3, "did not poll to completion");
-  });
-
-  it("takes a refusal as already fresh and succeeds", async () => {
-    const { result, text } = await report({
-      connections: [connection(ID_A)],
-      refreshes: {
-        [ID_A]: { kind: "too-soon", everyHours: 24, lastUpdatedAt: new Date("2026-07-25T09:00:00.000Z") },
-      },
-    });
-
-    assert.equal(outcomes(result)[0]?.kind, "already-fresh");
-    assert.equal(exitCodeFor(result), 0);
-    assert.match(text, /already fresh/);
-    assert.match(text, /24h/);
-    assert.match(text, /3h ago/);
-  });
-
-  it("counts a connector that cannot be refreshed as usable", async () => {
-    const { result, text } = await report({
-      connections: [connection(ID_A, { institution: "MeuPluggy" })],
-      refreshes: { [ID_A]: { kind: "not-refreshable" } },
-    });
-
-    assert.equal(outcomes(result)[0]?.kind, "not-refreshable");
-    assert.equal(exitCodeFor(result), 0);
-    assert.match(text, /MeuPluggy, UPDATED, synced 3h ago/);
-    assert.match(text, /cannot be refreshed on demand/);
-    assert.match(text, /own schedule/);
-    assert.match(text, /1 of 1/);
-    assert.doesNotMatch(text, /✗/);
+    assert.deepEqual(instance.calls, ["verifyCredentials", ID_A]);
+    assert.equal(outcomes(result)[0]?.kind, "usable");
   });
 
   it("keeps a network failure separate from a wrong id", async () => {
@@ -189,33 +138,6 @@ describe("runInit", () => {
   });
 });
 
-describe("runInit progress", () => {
-  it("shows what each bank is doing, then leaves an empty screen", async () => {
-    const { frames } = await report({
-      polls: {
-        [ID_A]: [updating(ID_A, "LOGIN_IN_PROGRESS"), updating(ID_A, "TRANSACTIONS_IN_PROGRESS"), connection(ID_A)],
-      },
-      refreshes: { [ID_A]: { kind: "started", connection: updating(ID_A, "LOGIN_IN_PROGRESS") } },
-    });
-
-    const details = frames.flatMap((rows) => rows.map((row) => `${row.label} — ${row.detail}`));
-    assert.deepEqual(details, ["Nubank — logging in", "Nubank — reading transactions"]);
-    assert.deepEqual(frames.at(-1), [], "left a finished connection on the screen");
-  });
-
-  it("names the institution rather than a uuid, since it asked for it first", async () => {
-    // The refresh response carries "Nubank"; only the validating read carries
-    // "Itaú". The label has to come from the read, or the spinner spends the next
-    // several minutes showing a UUID.
-    const { frames } = await report({
-      polls: { [ID_A]: [connection(ID_A, { institution: "Itaú" })] },
-      refreshes: { [ID_A]: { kind: "started", connection: updating(ID_A, "ACCOUNTS_IN_PROGRESS") } },
-    });
-
-    assert.equal(frames[0]?.[0]?.label, "Itaú");
-  });
-});
-
 describe("formatInit", () => {
   it("names each connection, its status and how long ago it synced", async () => {
     const { text } = await report({ connections: [connection(ID_A), connection(ID_B)] }, ENV);
@@ -223,6 +145,7 @@ describe("formatInit", () => {
     assert.match(text, /Nubank/);
     assert.match(text, /UPDATED/);
     assert.match(text, new RegExp(ID_A));
+    assert.match(text, /synced 3h ago/);
     assert.match(text, /2 of 2/);
   });
 
@@ -237,69 +160,33 @@ describe("formatInit", () => {
   it("prints every warning a partial sync came back with", async () => {
     const warning = "creditCards: Open Finance monthly rate limit reached";
     const { text, result } = await report({
-      connections: [connection(ID_A)],
-      refreshes: {
-        [ID_A]: {
-          kind: "started",
-          connection: connection(ID_A, { executionStatus: "PARTIAL_SUCCESS", warnings: [warning] }),
-        },
-      },
+      connections: [connection(ID_A, { executionStatus: "PARTIAL_SUCCESS", warnings: [warning] })],
     });
 
     assert.match(text, new RegExp(warning));
+    assert.match(text, /^!/m, "a quota warning was reported as an unqualified success");
     assert.equal(exitCodeFor(result), 0, "a product hitting its quota is not a broken connection");
     assert.match(text, /1 of 1/);
   });
 
-  it("says what the bank is waiting for when it wants a second factor", async () => {
+  it("says what the bank is waiting for, without calling the connection broken", async () => {
     const { text, result } = await report({
-      connections: [connection(ID_A)],
-      refreshes: {
-        [ID_A]: {
-          kind: "started",
-          connection: connection(ID_A, {
-            status: "WAITING_USER_INPUT",
-            executionStatus: "WAITING_USER_INPUT",
-            parameter: "Chave de segurança",
-          }),
-        },
-      },
+      connections: [
+        connection(ID_A, {
+          status: "WAITING_USER_INPUT",
+          executionStatus: "WAITING_USER_INPUT",
+          lastUpdatedAt: null,
+          parameter: "Chave de segurança",
+        }),
+      ],
     });
 
-    assert.match(text, /Chave de segurança/);
-    assert.equal(exitCodeFor(result), 1);
-  });
-
-  it("points a refused login at the only thing that fixes it", async () => {
-    const { text } = await report({
-      connections: [connection(ID_A)],
-      refreshes: {
-        [ID_A]: {
-          kind: "started",
-          connection: connection(ID_A, { status: "LOGIN_ERROR", executionStatus: "INVALID_CREDENTIALS" }),
-        },
-      },
-    });
-
-    assert.match(text, /Pluggy Connect/);
-  });
-
-  it("says a sync is still running rather than calling it broken", async () => {
-    const { text, result } = await report({
-      polls: { [ID_A]: [updating(ID_A, "TRANSACTIONS_IN_PROGRESS")] },
-      refreshes: { [ID_A]: { kind: "started", connection: updating(ID_A, "CREATED") } },
-    });
-
-    assert.equal(outcomes(result)[0]?.kind, "still-updating");
-    assert.match(text, /still/);
-    assert.doesNotMatch(text, /never synced/);
+    assert.match(text, /WAITING_USER_INPUT, never synced — the bank is waiting on you: Chave de segurança/);
+    assert.equal(exitCodeFor(result), 0, "a readable connection failed over a fact about the bank");
   });
 
   it("says so plainly when a connection has never synced", async () => {
-    const { text } = await report({
-      connections: [connection(ID_A, { lastUpdatedAt: null })],
-      refreshes: { [ID_A]: { kind: "started", connection: connection(ID_A, { lastUpdatedAt: null }) } },
-    });
+    const { text } = await report({ connections: [connection(ID_A, { lastUpdatedAt: null })] });
 
     assert.match(text, /never synced/);
     assert.doesNotMatch(text, /NaN|Invalid/);
@@ -323,15 +210,10 @@ describe("formatInit", () => {
 });
 
 describe("exitCodeFor", () => {
-  it("counts a refresh and a refusal as success and everything else as failure", () => {
+  it("counts a readable connection as success and an unreadable one as failure", () => {
     const cases: readonly { readonly outcome: ConnectionOutcome; readonly expected: number }[] = [
-      { outcome: { kind: "refreshed", id: ID_A, connection: connection(ID_A) }, expected: 0 },
-      { outcome: { kind: "already-fresh", id: ID_A, connection: connection(ID_A), everyHours: 24 }, expected: 0 },
-      { outcome: { kind: "not-refreshable", id: ID_A, connection: connection(ID_A) }, expected: 0 },
-      { outcome: { kind: "needs-user", id: ID_A, connection: connection(ID_A) }, expected: 1 },
-      { outcome: { kind: "login-error", id: ID_A, connection: connection(ID_A) }, expected: 1 },
-      { outcome: { kind: "still-updating", id: ID_A, connection: connection(ID_A) }, expected: 1 },
-      { outcome: { kind: "failed", id: ID_A, institution: null, reason: "not found" }, expected: 1 },
+      { outcome: { kind: "usable", id: ID_A, connection: connection(ID_A) }, expected: 0 },
+      { outcome: { kind: "failed", id: ID_A, reason: "not found" }, expected: 1 },
     ];
 
     for (const { outcome, expected } of cases) {

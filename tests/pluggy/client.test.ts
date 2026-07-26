@@ -295,85 +295,9 @@ describe("createPluggyClient", () => {
     assert.equal(acquired.length, fetch.requests.length);
     assert.equal(acquired.length, 2);
   });
-});
-
-describe("refreshConnection", () => {
-  function refreshHarness(handler: Handler) {
-    const clock = fixedClock(NOW);
-    const slept: number[] = [];
-    const general: string[] = [];
-    const update: string[] = [];
-    const fetch = fakeFetch(handler);
-
-    const client = createPluggyClient({
-      credentials: CREDENTIALS,
-      clock,
-      fetch,
-      baseUrl: BASE_URL,
-      sleep: async (milliseconds) => {
-        slept.push(milliseconds);
-      },
-      limiter: {
-        acquire: async () => {
-          general.push("acquire");
-        },
-      },
-      updateLimiter: {
-        acquire: async () => {
-          update.push("acquire");
-        },
-      },
-      log: fakeLogger(),
-    });
-
-    return { client, fetch, slept, general, update };
-  }
-
-  const withKey: Handler = (request) =>
-    isAuth(request) ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) }) : json(itemBody(ID));
-
-  it("triggers the sync with a PATCH carrying the key and no credentials", async () => {
-    const { client, fetch } = refreshHarness(withKey);
-
-    const start = await client.refreshConnection(ID);
-
-    const patch = fetch.requests.find((request) => !isAuth(request));
-    assert.equal(patch?.method, "PATCH");
-    assert.equal(patch?.url, `${BASE_URL}/items/${ID}`);
-    assert.deepEqual(patch?.body, {}, "sent something other than an empty body");
-    assert.match(patch?.apiKey ?? "", /^ey/);
-    assert.equal(start.kind, "started");
-  });
-
-  it("maps the triggered item, execution status and all", async () => {
-    const { client } = refreshHarness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(
-            itemBody(ID, {
-              status: "UPDATING",
-              executionStatus: "LOGIN_IN_PROGRESS",
-              lastUpdatedAt: null,
-            }),
-          ),
-    );
-
-    const start = await client.refreshConnection(ID);
-
-    assert.equal(start.kind, "started");
-    assert.deepEqual(start.kind === "started" ? start.connection : null, {
-      id: ID,
-      institution: "Nubank",
-      status: "UPDATING",
-      executionStatus: "LOGIN_IN_PROGRESS",
-      lastUpdatedAt: null,
-      parameter: null,
-      warnings: [],
-    });
-  });
 
   it("reads the MFA prompt's label out of the item", async () => {
-    const { client } = refreshHarness((request) =>
+    const { client } = harness((request) =>
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : json(
@@ -385,13 +309,11 @@ describe("refreshConnection", () => {
           ),
     );
 
-    const start = await client.refreshConnection(ID);
-
-    assert.equal(start.kind === "started" ? start.connection.parameter : null, "Chave de segurança");
+    assert.equal((await client.getConnection(ID)).parameter, "Chave de segurança");
   });
 
   it("flattens the statusDetail warnings a PARTIAL_SUCCESS carries", async () => {
-    const { client } = refreshHarness((request) =>
+    const { client } = harness((request) =>
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : json(
@@ -409,65 +331,26 @@ describe("refreshConnection", () => {
           ),
     );
 
-    const start = await client.refreshConnection(ID);
-
-    assert.deepEqual(start.kind === "started" ? start.connection.warnings : [], [
+    assert.deepEqual((await client.getConnection(ID)).warnings, [
       "creditCards: Open Finance monthly rate limit reached",
     ]);
   });
 
   it("survives a statusDetail shaped in a way we did not predict", async () => {
-    const { client } = refreshHarness((request) =>
+    const { client } = harness((request) =>
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : json(itemBody(ID, { statusDetail: "something else entirely" })),
     );
 
-    const start = await client.refreshConnection(ID);
+    const connection = await client.getConnection(ID);
 
-    assert.equal(start.kind, "started", "an advisory field cost us a completed sync");
-    assert.deepEqual(start.kind === "started" ? start.connection.warnings : null, []);
-  });
-
-  it("reads a 409 as too soon, keeping the interval and the last sync", async () => {
-    const { client } = refreshHarness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(
-            {
-              code: 409,
-              codeDescription: "CLIENT_IS_UPDATING_BEFORE_ALLOWED_FREQUENCY",
-              message: "Client updates on this item are allowed at most every 24 hours.",
-              data: { minUpdateFrequencyAllowedInHours: 24, lastUpdatedAt: "2026-07-25T09:00:00.000Z" },
-            },
-            409,
-          ),
-    );
-
-    const start = await client.refreshConnection(ID);
-
-    assert.equal(start.kind, "too-soon");
-    assert.equal(start.kind === "too-soon" ? start.everyHours : null, 24);
-    assert.deepEqual(
-      start.kind === "too-soon" ? start.lastUpdatedAt : null,
-      new Date("2026-07-25T09:00:00.000Z"),
-    );
-  });
-
-  it("still reads a 409 as too soon when its body makes no sense", async () => {
-    const { client } = refreshHarness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json("too soon", 409),
-    );
-
-    const start = await client.refreshConnection(ID);
-
-    assert.deepEqual(start, { kind: "too-soon", everyHours: null, lastUpdatedAt: null });
+    assert.equal(connection.id, ID, "an advisory field cost us a whole connection");
+    assert.deepEqual(connection.warnings, []);
   });
 
   it("repeats Pluggy's own explanation of a 400 rather than only its number", async () => {
-    const { client } = refreshHarness((request) =>
+    const { client } = harness((request) =>
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : json(
@@ -480,35 +363,15 @@ describe("refreshConnection", () => {
           ),
     );
 
-    await assert.rejects(client.refreshConnection(ID), (error: Error) => {
+    await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.match(error.message, /CONNECTOR_REQUIRED_PARAMETER_VALIDATION_ERROR/);
       assert.match(error.message, /'token' is required to be renewed/);
       return true;
     });
   });
 
-  it("reads the connector-cannot-be-updated 400 as a refusal, however Pluggy spells it", async () => {
-    const messages = [
-      // Verbatim from connector 200 on 2026-07-26, their typo included.
-      "MeuPluggy item cant be updated",
-      "MeuPluggy item can't be updated",
-      "MeuPluggy item cannot be updated",
-      "MEUPLUGGY ITEM CANT BE UPDATED",
-    ];
-
-    for (const message of messages) {
-      const { client } = refreshHarness((request) =>
-        isAuth(request)
-          ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-          : json({ message, code: 400, errorId: "9999f635-b018-49d4-aa54-cd68242ed134" }, 400),
-      );
-
-      assert.deepEqual(await client.refreshConnection(ID), { kind: "not-refreshable" }, message);
-    }
-  });
-
   it("carries the retry-after date out of a login-failure lockout", async () => {
-    const { client } = refreshHarness((request) =>
+    const { client } = harness((request) =>
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : json(
@@ -522,74 +385,40 @@ describe("refreshConnection", () => {
           ),
     );
 
-    await assert.rejects(client.refreshConnection(ID), (error: Error) => {
+    await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.match(error.message, /retry after 2026-07-26T12:15:00.000Z/);
       return true;
     });
   });
 
   it("still says something useful when the error body is not an envelope", async () => {
-    const { client } = refreshHarness((request) =>
+    const { client } = harness((request) =>
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : new Response("<html>gateway</html>", { status: 502 }),
     );
 
-    await assert.rejects(client.refreshConnection(ID), (error: Error) => {
+    await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.match(error.message, /502/);
       return true;
     });
   });
 
-  it("keeps a wrong id a wrong id", async () => {
-    const { client } = refreshHarness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ message: "not found" }, 404),
-    );
-
-    await assert.rejects(client.refreshConnection(ID), NotFoundError);
-  });
-
-  it("holds the update path to its own tighter window, and only that path", async () => {
-    const { client, general, update } = refreshHarness(withKey);
-
-    await client.getConnection(ID);
-    assert.deepEqual(update, [], "a read spent the update budget");
-
-    await client.refreshConnection(ID);
-    assert.equal(update.length, 1);
-    assert.equal(general.length, 3, "the update skipped the general window");
-  });
-
-  it("waits out a 429 for as long as Pluggy asks, then gives up", async () => {
-    const { client, fetch, slept } = refreshHarness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ message: "slow down" }, 429, { "retry-after": "2" }),
-    );
-
-    await assert.rejects(client.refreshConnection(ID), RateLimitError);
-
-    assert.deepEqual(slept, Array.from({ length: RATE_LIMIT_RETRIES }, () => 2_000));
-    assert.equal(fetch.requests.filter((request) => !isAuth(request)).length, RATE_LIMIT_RETRIES + 1);
-  });
-
   it("falls back to a minute when the 429 names no delay", async () => {
-    const { client, slept } = refreshHarness((request) =>
+    const { client, slept } = harness((request) =>
       isAuth(request)
         ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
         : json({ message: "slow down" }, 429),
     );
 
-    await assert.rejects(client.refreshConnection(ID), RateLimitError);
+    await assert.rejects(client.getConnection(ID), RateLimitError);
 
     assert.deepEqual(slept, Array.from({ length: RATE_LIMIT_RETRIES }, () => 60_000));
   });
 
   it("recovers when the retry after a 429 succeeds", async () => {
     let attempts = 0;
-    const { client, slept } = refreshHarness((request) => {
+    const { client, slept } = harness((request) => {
       if (isAuth(request)) {
         return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
       }
@@ -597,9 +426,7 @@ describe("refreshConnection", () => {
       return attempts === 1 ? json({ message: "slow down" }, 429, { "retry-after": "1" }) : json(itemBody(ID));
     });
 
-    const start = await client.refreshConnection(ID);
-
-    assert.equal(start.kind, "started");
+    assert.equal((await client.getConnection(ID)).id, ID);
     assert.deepEqual(slept, [1_000]);
   });
 });
