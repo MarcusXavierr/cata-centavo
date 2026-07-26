@@ -46,7 +46,7 @@ node --test --test-name-pattern="unknown command"
 src/
 ├── core/          business rules. no fetch, no sqlite, no SDK
 │   └── contracts.ts    interfaces core requires of whoever serves it
-├── pluggy/        client.ts · mapper.ts · errors.ts
+├── pluggy/        client.ts · transport.ts · mapper.ts · errors.ts · wire.ts
 ├── storage/       db.ts · schema.sql · store.ts
 ├── mcp/           server.ts · format.ts · tools/
 ├── cli/           init.ts · doctor.ts · dispatch.ts

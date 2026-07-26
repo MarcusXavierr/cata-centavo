@@ -164,7 +164,7 @@ src/
 │   ├── account.ts · transaction.ts · balance.ts
 │   ├── installments.ts · bill.ts · category.ts
 │   └── contracts.ts    interfaces core requires of whoever serves it
-├── pluggy/        client.ts · mapper.ts · errors.ts
+├── pluggy/        client.ts · transport.ts · mapper.ts · errors.ts · wire.ts
 ├── storage/       db.ts · schema.sql · store.ts
 ├── mcp/           server.ts · format.ts · tools/
 ├── cli/           init.ts · doctor.ts
@@ -175,6 +175,8 @@ tests/
 ├── fakes/         fake-bank.ts · fixed-clock.ts · fake-store.ts
 └── fixtures/      raw JSON captured from Pluggy
 ```
+
+> **Amendment, 2026-07-26 — `pluggy/transport.ts` and `pluggy/wire.ts`.** `client.ts` had two subjects in it: connections, and the wire under them (both rate-limit windows, the API key and its renewal, the 401 and 429 retries). The size sensors flagged it first, but the seam was already there, so they are separate files now. `client.ts` speaks connections; `transport.ts` owns everything between us and Pluggy's HTTP, which is what makes §16.2's promise checkable rather than merely stated: there is one function that sends, it is private to `transport.ts`, and a new endpoint cannot reach the network around it. Turning a response into one of our errors moved to `errors.ts`, since both files need it — a refused `POST /auth` and a refused `GET /items/{id}` are the same failure with a different sentence attached.
 
 **The rule holding this together:** `src/core/` imports nothing from `src/pluggy/`, `src/storage/` or `src/mcp/`. The interfaces live in `core/contracts.ts` because the contract belongs to the consumer, not the implementer.
 

@@ -213,24 +213,32 @@ function formatStorage(storage: StorageInfo): readonly string[] {
   ];
 }
 
-function formatOutcome(outcome: ConnectionOutcome, clock: Clock): readonly string[] {
-  if (outcome.kind === "failed") {
-    const who = outcome.institution === null ? "" : `${outcome.institution}: `;
-    return [`✗ ${outcome.id} — ${who}${outcome.reason}`];
-  }
+/** The outcomes that carry the connection they are talking about. */
+type SettledOutcome = Exclude<ConnectionOutcome, { readonly kind: "failed" }>;
 
+function formatOutcome(outcome: ConnectionOutcome, clock: Clock): readonly string[] {
+  return outcome.kind === "failed" ? formatFailure(outcome) : formatSettled(outcome, clock);
+}
+
+function formatFailure(outcome: Extract<ConnectionOutcome, { readonly kind: "failed" }>): readonly string[] {
+  const who = outcome.institution === null ? "" : `${outcome.institution}: `;
+
+  return [`✗ ${outcome.id} — ${who}${outcome.reason}`];
+}
+
+/**
+ * Splitting this union in two would put the shape of the report in two places.
+ * The count is one branch per outcome kind and nothing else, and the compiler is
+ * what keeps that set complete — hence the suppression rather than a refactor.
+ */
+// eslint-disable-next-line complexity -- one branch per outcome kind; see above
+function formatSettled(outcome: SettledOutcome, clock: Clock): readonly string[] {
   const { institution, status, lastUpdatedAt, parameter, warnings } = outcome.connection;
   const state = `${institution}, ${status}, ${describeSync(lastUpdatedAt, clock.now())}`;
 
   switch (outcome.kind) {
     case "refreshed":
-      // A `!` rather than a `✓`, because a product that hit its Open Finance
-      // monthly quota went unrefreshed and the numbers below it are older than
-      // the rest. Worth saying out loud, and not worth failing over.
-      return [
-        `${warnings.length > 0 ? "!" : "✓"} ${outcome.id} — ${state}`,
-        ...warnings.map((warning) => `    ${warning}`),
-      ];
+      return formatRefreshed(outcome.id, state, warnings);
 
     case "already-fresh":
       return [`· ${outcome.id} — ${state} — already fresh, ${describeInterval(outcome.everyHours)}`];
@@ -244,10 +252,7 @@ function formatOutcome(outcome: ConnectionOutcome, clock: Clock): readonly strin
       ];
 
     case "needs-user":
-      return [
-        `✗ ${outcome.id} — ${institution} is waiting on you${parameter === null ? "" : `: ${parameter}`}`,
-        "    run init again with it to hand, the bank asks once per attempt",
-      ];
+      return formatNeedsUser(outcome.id, institution, parameter);
 
     case "login-error":
       return [
@@ -258,6 +263,25 @@ function formatOutcome(outcome: ConnectionOutcome, clock: Clock): readonly strin
     case "still-updating":
       return [`⋯ ${outcome.id} — ${institution} is still syncing — it carries on at Pluggy, so run init again shortly`];
   }
+}
+
+/**
+ * A `!` rather than a `✓`, because a product that hit its Open Finance monthly
+ * quota went unrefreshed and the numbers below it are older than the rest.
+ * Worth saying out loud, and not worth failing over.
+ */
+function formatRefreshed(id: string, state: string, warnings: readonly string[]): readonly string[] {
+  return [
+    `${warnings.length > 0 ? "!" : "✓"} ${id} — ${state}`,
+    ...warnings.map((warning) => `    ${warning}`),
+  ];
+}
+
+function formatNeedsUser(id: string, institution: string, parameter: string | null): readonly string[] {
+  return [
+    `✗ ${id} — ${institution} is waiting on you${parameter === null ? "" : `: ${parameter}`}`,
+    "    run init again with it to hand, the bank asks once per attempt",
+  ];
 }
 
 function describeInterval(everyHours: number | null): string {

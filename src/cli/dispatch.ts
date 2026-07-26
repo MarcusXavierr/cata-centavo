@@ -55,7 +55,11 @@ export function resolveInvocation(argv: readonly string[]): Invocation {
   if (parsed.values.help === true) return { kind: "help" };
   if (parsed.values.version === true) return { kind: "version" };
 
-  const [first, ...rest] = parsed.positionals;
+  return commandFrom(parsed.positionals);
+}
+
+function commandFrom(positionals: readonly string[]): Invocation {
+  const [first, ...rest] = positionals;
 
   if (rest.length > 0) {
     return { kind: "error", message: `unexpected argument: ${rest[0]}` };
