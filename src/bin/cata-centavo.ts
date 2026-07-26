@@ -1,18 +1,33 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 
-import { resolveInvocation } from "../cli/dispatch.ts";
+import { COMMANDS, resolveInvocation, type Command } from "../cli/dispatch.ts";
+import { exitCodeFor, formatInit, runInit, type StorageInfo } from "../cli/init.ts";
+import { createProgress, type Progress } from "../cli/progress.ts";
+import { resolvePaths } from "../config.ts";
+import { createLogger } from "../logging.ts";
+import { createPluggyClient } from "../pluggy/client.ts";
+import { openDatabases, schemaVersion } from "../storage/db.ts";
 
 const USAGE = `cata-centavo — Brazilian Open Finance over MCP
 
 Usage:
   cata-centavo            MCP server over stdio (default mode)
-  cata-centavo init       interactive setup: validates credentials and connections
+  cata-centavo init       validates the credentials and every configured connection
   cata-centavo doctor     diagnostics: consent, connection status, last sync
 
 Options:
   -h, --help              show this help
   -v, --version           show the version
+
+Configuration comes from the environment:
+  PLUGGY_CLIENT_ID        from your Pluggy dashboard
+  PLUGGY_CLIENT_SECRET    from your Pluggy dashboard
+  PLUGGY_ITEM_IDS         connection ids from MeuPluggy, separated by commas
+
+An MCP client does not read your shell profile, so declare these in the "env"
+block of its config as well.
 `;
 
 /**
@@ -39,6 +54,88 @@ function say(message: string): void {
   process.stderr.write(message.endsWith("\n") ? message : `${message}\n`);
 }
 
+const systemClock = { now: () => new Date() };
+
+/** Creates both files, runs their migrations, and lets go of the handles. */
+function prepareStorage(paths: ReturnType<typeof resolvePaths>): StorageInfo {
+  const databases = openDatabases(paths);
+
+  try {
+    return {
+      cacheDb: paths.cacheDb,
+      dataDb: paths.dataDb,
+      cacheVersion: schemaVersion(databases.cache),
+      dataVersion: schemaVersion(databases.data),
+    };
+  } finally {
+    databases.close();
+  }
+}
+
+const sleep = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+
+/**
+ * The live region, on stderr like everything else a human reads. `unref` so a
+ * spinner cannot be the reason the process refuses to exit.
+ */
+function createStderrProgress(): Progress {
+  return createProgress({
+    write: (text) => process.stderr.write(text),
+    tty: process.stderr.isTTY ?? false,
+    interval: (callback, ms) => {
+      const timer = setInterval(callback, ms);
+      timer.unref();
+      return { cancel: () => clearInterval(timer) };
+    },
+  });
+}
+
+async function run(command: Command): Promise<number> {
+  if (command === COMMANDS.init) {
+    const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
+    const log = createLogger({ env: process.env, logFile: paths.logFile });
+    const progress = createStderrProgress();
+
+    // A refresh can run for minutes, and Ctrl-C in the middle of it must not
+    // leave the terminal with a hidden cursor and half a spinner on it.
+    const interrupted = (): void => {
+      progress.stop();
+      process.exit(130);
+    };
+    process.once("SIGINT", interrupted);
+
+    let report;
+    try {
+      report = await runInit({
+        env: process.env,
+        prepareStorage: () => prepareStorage(paths),
+        createBank: (credentials) =>
+          createPluggyClient({ credentials, clock: systemClock, fetch: globalThis.fetch, sleep, log }),
+        sleep,
+        report: (rows) => {
+          progress.update(rows);
+        },
+      });
+    } finally {
+      progress.stop();
+      process.off("SIGINT", interrupted);
+    }
+
+    for (const line of formatInit(report, systemClock)) {
+      say(line);
+    }
+
+    return exitCodeFor(report);
+  }
+
+  // Phases 1 and 7 of the roadmap (ADR §15).
+  say(`[stub] command "${command}" is not implemented yet`);
+  return 1;
+}
+
 const invocation = resolveInvocation(process.argv.slice(2));
 
 switch (invocation.kind) {
@@ -57,8 +154,6 @@ switch (invocation.kind) {
     break;
 
   case "command":
-    // Stubs. The real implementation is Phase 0 of the roadmap (ADR §15).
-    say(`[stub] command "${invocation.command}" is not implemented yet`);
-    process.exitCode = 1;
+    process.exitCode = await run(invocation.command);
     break;
 }

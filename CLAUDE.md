@@ -17,6 +17,7 @@ nvm use                  # reads .nvmrc → v24.15.0
 
 npm run dev              # run the CLI from source (node executes .ts directly)
 npm run typecheck        # tsc --noEmit — this is the linter, see below
+npm run lint             # eslint como sensor — avisos informam, erros reprovam
 npm test                 # node --test, finds tests/**/*.test.ts
 npm run test:watch
 npm run build            # tsc -p tsconfig.build.json → dist/
@@ -29,7 +30,7 @@ node --test tests/cli/dispatch.test.ts
 node --test --test-name-pattern="unknown command"
 ```
 
-**Always run `npm run typecheck` before `npm test`.** Node strips types without checking them: `const x: number = "string"` runs fine. Without `tsc`, the project has no type checking at all. Typecheck first, then tests, then build — the same order CI uses.
+**Always run `npm run typecheck` before `npm run lint` before `npm test`.** Node strips types without checking them: `const x: number = "string"` runs fine. Without `tsc`, the project has no type checking at all. Typecheck first, then lint, then tests, then build — the same order CI uses.
 
 ## Runtime constraints that bite
 
@@ -70,8 +71,8 @@ No `services/`, no `utils/`, no `ports/`/`adapters/`. Tests live in `tests/`, no
 
 ### Code quality process
 
-1. `npm run typecheck` before `npm test` — the typecheck catches what the test runner never will.
-2. Both must pass before you consider a change done. CI runs typecheck → test → build.
+1. `npm run typecheck` before `npm run lint` before `npm test` — the typecheck catches what the test runner never will.
+2. All three must pass before you consider a change done. CI runs typecheck → lint → test → build.
 3. Keep the devDependency list at two entries (`typescript`, `@types/node`) unless there is a decision to add a third. Dependency minimalism is a stated value of this project, not an accident.
 
 ### Comments

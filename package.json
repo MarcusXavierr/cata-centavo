@@ -37,19 +37,25 @@
   "scripts": {
     "dev": "node src/bin/cata-centavo.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests --format ./tools/eslint-formatter-agent.js",
+    "lint:fix": "eslint src tests --fix --format ./tools/eslint-formatter-agent.js",
     "test": "node --test",
     "test:watch": "node --test --watch",
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run typecheck && npm test"
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "pino": "^10.3.1",
+    "pino-roll": "^4.0.0",
     "pluggy-sdk": "^0.90.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "typescript": "^7.0.2"
+    "eslint": "^10.8.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.65.0"
   }
 }
