@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { TaxonomyEntry } from "../core/taxonomy.ts";
+
 /**
  * The raw bodies we read from Pluggy, described rather than assumed.
  *
@@ -88,6 +90,81 @@ export const ACCOUNT_PAGE = z.object({
 });
 
 export type WireAccount = z.infer<typeof ACCOUNT>;
+
+/** Nested fields Pluggy omits entirely when a card row has no such detail. */
+export const CREDIT_CARD_METADATA = z.object({
+  billId: z.string().optional(),
+  installmentNumber: z.number().optional(),
+  totalInstallments: z.number().optional(),
+  cardNumber: z.string().optional(),
+  payeeMCC: z.number().optional(),
+  purchaseDate: z.string().optional(),
+  feeType: z.string().optional(),
+});
+
+export const PAYMENT_DATA = z.object({
+  receiver: z
+    .object({
+      name: z.string().nullish(),
+      documentNumber: z.object({ value: z.string().optional(), type: z.string().optional() }).optional(),
+    })
+    .nullish(),
+  paymentMethod: z.string().nullish(),
+});
+
+export const TRANSACTION = z.object({
+  id: z.string(),
+  accountId: z.string(),
+  date: z.string(),
+  description: z.string(),
+  descriptionRaw: z.string().nullish(),
+  amount: z.number(),
+  amountInAccountCurrency: z.number().nullish(),
+  currencyCode: z.string().nullish(),
+  category: z.string().nullish(),
+  categoryId: z.string().nullish(),
+  status: z.string().nullish(),
+  creditCardMetadata: CREDIT_CARD_METADATA.nullish(),
+  paymentData: PAYMENT_DATA.nullish(),
+});
+
+export type WireTransaction = z.infer<typeof TRANSACTION>;
+
+/** The cursor-paginated envelope for `/v2/transactions`. */
+export const TRANSACTION_PAGE = z.object({
+  results: z.array(TRANSACTION),
+  next: z.string().nullable(),
+});
+
+export const CATEGORY = z.object({
+  id: z.string(),
+  description: z.string(),
+  descriptionTranslated: z.string().nullish(),
+  parentId: z.string().nullish(),
+  parentDescription: z.string().nullish(),
+});
+
+export const CATEGORY_PAGE = z.object({
+  results: z.array(CATEGORY),
+  total: z.number(),
+  totalPages: z.number(),
+  page: z.number(),
+});
+
+type CategoryPage = z.infer<typeof CATEGORY_PAGE>;
+
+/** Reduces the one supported category page into the pure core taxonomy shape. */
+export function parseCategoryPage(page: CategoryPage): readonly TaxonomyEntry[] {
+  if (page.totalPages !== 1) {
+    throw new Error(`Categories totalPages is ${page.totalPages}; expected one complete page`);
+  }
+
+  return page.results.map((category) => ({
+    id: category.id,
+    parentId: category.parentId ?? null,
+    parentDescription: category.parentDescription ?? null,
+  }));
+}
 
 /**
  * Pluggy's error envelope. Read on every non-2xx, because the status alone is not

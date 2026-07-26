@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import type { Account } from "../../src/core/account.ts";
 import { createPluggyClient } from "../../src/pluggy/client.ts";
-import { RATE_LIMIT_RETRIES } from "../../src/pluggy/transport.ts";
+import { RATE_LIMIT_RETRIES, type RateLimiter } from "../../src/pluggy/transport.ts";
 import {
   AuthError,
   HttpError,
@@ -58,6 +59,105 @@ function isAuth(request: { url: string }): boolean {
   return request.url.endsWith("/auth");
 }
 
+const TRANSACTION_ACCOUNT: Account = {
+  id: "acc-card",
+  connectionId: ID,
+  institution: "Nubank",
+  name: "Card",
+  type: "CREDIT",
+  subtype: "CREDIT_CARD",
+  amountCents: 0,
+  currency: "BRL",
+  lastUpdatedAt: NOW,
+  credit: null,
+};
+
+type TransactionPageCase = { readonly ids: readonly string[]; readonly next: string | null };
+
+function transactionBody(id: string, accountId = TRANSACTION_ACCOUNT.id): unknown {
+  return {
+    id,
+    accountId,
+    date: "2026-06-20T03:00:00.000Z",
+    description: `Transaction ${id}`,
+    amount: 10,
+    amountInAccountCurrency: null,
+    currencyCode: "BRL",
+    categoryId: "01000000",
+    creditCardMetadata: null,
+    paymentData: null,
+  };
+}
+
+type PageResponder = Handler & { readonly urls: readonly string[] };
+
+function pageResponder(pages: readonly TransactionPageCase[]): PageResponder {
+  const urls: string[] = [];
+  let pageIndex = 0;
+  const responder: Handler = (request) => {
+    if (isAuth(request)) {
+      return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+    }
+
+    urls.push(request.url);
+    const page = pages[pageIndex];
+    assert.ok(page, `missing synthetic page ${pageIndex}`);
+    pageIndex += 1;
+    return json({ results: page.ids.map((id) => transactionBody(id)), next: page.next });
+  };
+
+  return Object.assign(responder, { urls });
+}
+
+function endlessPageResponder(): Handler {
+  let pageIndex = 0;
+  return (request) => {
+    if (isAuth(request)) {
+      return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+    }
+
+    const id = `transaction-${pageIndex}`;
+    pageIndex += 1;
+    return json({ results: [transactionBody(id)], next: `?after=${pageIndex}` });
+  };
+}
+
+function categoryResponder(): Handler {
+  return (request) => {
+    if (isAuth(request)) {
+      return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+    }
+
+    return json({
+      results: [{ id: "01000000", description: "Income", parentId: null }],
+      total: 1,
+      totalPages: 1,
+      page: 1,
+    });
+  };
+}
+
+function failingThenWorkingCategories(): Handler {
+  let categoryCalls = 0;
+  return (request) => {
+    if (isAuth(request)) {
+      return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+    }
+
+    categoryCalls += 1;
+    if (categoryCalls === 1) {
+      return json({ message: "temporarily unavailable" }, 503);
+    }
+
+    return json({
+      results: [{ id: "01000000", description: "Income", parentId: null }],
+      total: 1,
+      totalPages: 1,
+      page: 1,
+    });
+  };
+}
+
 type Harness = {
   readonly client: ReturnType<typeof createPluggyClient>;
   readonly fetch: FakeFetch;
@@ -72,12 +172,24 @@ type Harness = {
  * documented minute, and one test forgetting to replace it is two minutes of a
  * suite that looks hung rather than failed.
  */
-function harness(handler?: Handler): Harness {
+type HarnessOptions = { readonly responder?: Handler; readonly limiter?: RateLimiter };
+type HarnessArgument = Handler | HarnessOptions;
+
+function harness(argument?: HarnessArgument): Harness {
   const clock = fixedClock(NOW);
   const slept: number[] = [];
 
+  let responder: Handler | undefined;
+  let limiter: RateLimiter | undefined;
+  if (typeof argument === "function") {
+    responder = argument;
+  } else {
+    responder = argument?.responder;
+    limiter = argument?.limiter;
+  }
+
   const fetch = fakeFetch(
-    handler ??
+    responder ??
       ((request) => {
         if (isAuth(request)) {
           return json({ apiKey: fakeJwt(new Date(clock.now().getTime() + KEY_LIFETIME_MS)) });
@@ -87,16 +199,20 @@ function harness(handler?: Handler): Harness {
   );
   const log = fakeLogger();
 
-  const client = createPluggyClient({
+  const clientOptions = {
     credentials: CREDENTIALS,
     clock,
     fetch,
     baseUrl: BASE_URL,
-    sleep: async (milliseconds) => {
+    sleep: async (milliseconds: number) => {
       slept.push(milliseconds);
     },
     log,
-  });
+  };
+  if (limiter !== undefined) {
+    Object.assign(clientOptions, { limiter });
+  }
+  const client = createPluggyClient(clientOptions);
 
   return {
     client,
@@ -109,6 +225,78 @@ function harness(handler?: Handler): Harness {
 }
 
 describe("createPluggyClient", () => {
+  const WALK_CASES: readonly {
+    readonly name: string;
+    readonly pages: readonly TransactionPageCase[];
+    readonly expected: number;
+  }[] = [
+    { name: "a single page", pages: [{ ids: ["a"], next: null }], expected: 1 },
+    {
+      name: "three pages",
+      pages: [{ ids: ["a"], next: "?after=1" }, { ids: ["b"], next: "?after=2" }, { ids: ["c"], next: null }],
+      expected: 3,
+    },
+    { name: "a short page that is not the last", pages: [{ ids: ["a"], next: "?after=1" }, { ids: ["b", "c"], next: null }], expected: 3 },
+    { name: "an account with no transactions", pages: [{ ids: [], next: null }], expected: 0 },
+  ];
+
+  for (const { name, pages, expected } of WALK_CASES) {
+    it(`the walk terminates only on next === null: ${name}`, async () => {
+      const { client } = harness({ responder: pageResponder(pages), limiter: { acquire: async () => {} } });
+
+      assert.equal((await client.getTransactions(TRANSACTION_ACCOUNT)).length, expected);
+    });
+  }
+
+  it("the walk joins next as a query string, not a path", async () => {
+    const responder = pageResponder([{ ids: ["a"], next: "?after=abc" }, { ids: ["b"], next: null }]);
+    const { client } = harness({ responder, limiter: { acquire: async () => {} } });
+
+    await client.getTransactions(TRANSACTION_ACCOUNT);
+
+    assert.equal(responder.urls[1], `${BASE_URL}/v2/transactions?after=abc`);
+  });
+
+  it("the walk fails when the cursor stops advancing", async () => {
+    const { client } = harness({
+      responder: pageResponder([{ ids: ["a"], next: "?after=1" }, { ids: ["b"], next: "?after=1" }]),
+      limiter: { acquire: async () => {} },
+    });
+
+    await assert.rejects(() => client.getTransactions(TRANSACTION_ACCOUNT), /cursor/iu);
+  });
+
+  it("the walk fails when a page repeats ids already seen", async () => {
+    const { client } = harness({
+      responder: pageResponder([{ ids: ["a"], next: "?after=1" }, { ids: ["a"], next: "?after=2" }]),
+      limiter: { acquire: async () => {} },
+    });
+
+    await assert.rejects(() => client.getTransactions(TRANSACTION_ACCOUNT), /already seen/iu);
+  });
+
+  it("the walk fails loudly on the hop cap instead of looping forever", async () => {
+    const { client } = harness({ responder: endlessPageResponder(), limiter: { acquire: async () => {} } });
+
+    await assert.rejects(() => client.getTransactions(TRANSACTION_ACCOUNT), /500/u);
+  });
+
+  it("getCategories is fetched once per client and reused", async () => {
+    const { client, fetch } = harness({ responder: categoryResponder(), limiter: { acquire: async () => {} } });
+
+    await client.getCategories();
+    await client.getCategories();
+
+    assert.equal(fetch.requests.filter((request) => request.url.includes("/categories")).length, 1);
+  });
+
+  it("a failed getCategories is not cached", async () => {
+    const { client } = harness({ responder: failingThenWorkingCategories(), limiter: { acquire: async () => {} } });
+
+    await assert.rejects(() => client.getCategories());
+    assert.equal((await client.getCategories()).length, 1);
+  });
+
   it("performs no I/O when constructed", () => {
     const { fetch } = harness();
     assert.equal(fetch.requests.length, 0);

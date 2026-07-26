@@ -5,7 +5,7 @@
   "tap": {
     "testFiles": ["tests/**/*.test.ts"]
   },
-  "mutate": ["src/core/**/*.ts", "src/pluggy/**/*.ts", "src/mcp/format.ts"],
+  "mutate": ["src/core/**/*.ts", "src/pluggy/**/*.ts", "src/storage/transactions.ts", "src/mcp/format.ts"],
   "ignorePatterns": ["dist", "docs"],
   "coverageAnalysis": "perTest",
   "reporters": ["progress", "clear-text", "json"],

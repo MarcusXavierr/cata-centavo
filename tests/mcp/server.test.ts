@@ -8,7 +8,7 @@ import { fakeLogger } from "../fakes/fake-logger.ts";
 import { createServer } from "../../src/mcp/server.ts";
 
 describe("MCP server", () => {
-  it("lists all three tools even when the configuration is broken", async () => {
+  it("lists every tool even when the configuration is broken", async () => {
     const server = createServer({
       source: { ok: false, problems: ["PLUGGY_CLIENT_SECRET is missing or empty."] },
       version: "0.0.0",
@@ -22,7 +22,14 @@ describe("MCP server", () => {
 
     const result = await client.listTools();
 
-    assert.deepEqual(result.tools.map(({ name }) => name), ["getAccounts", "getBalanceByAccount", "getBalance"]);
+    assert.deepEqual(result.tools.map(({ name }) => name), [
+      "getAccounts",
+      "getBalanceByAccount",
+      "getBalance",
+      "getTransactions",
+      "listTransactions",
+      "getTransactionDetails",
+    ]);
 
     await client.close();
     await server.close();

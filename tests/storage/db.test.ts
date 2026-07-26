@@ -5,8 +5,8 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { after, describe, it } from "node:test";
 
-import { openDatabase, SchemaTooNewError } from "../../src/storage/db.ts";
-import type { Migration } from "../../src/storage/migrations.ts";
+import { openDatabase, SchemaTooNewError, targetVersion } from "../../src/storage/db.ts";
+import { CACHE_MIGRATIONS, type Migration } from "../../src/storage/migrations.ts";
 
 const V1: Migration = { to: 1, up: "CREATE TABLE note (id INTEGER PRIMARY KEY, body TEXT)" };
 const V2: Migration = { to: 2, up: "CREATE TABLE tag (id INTEGER PRIMARY KEY)" };
@@ -149,6 +149,17 @@ describe("openDatabase", () => {
     assert.equal(userVersion(db), 0);
     assert.deepEqual(tableNames(db), []);
 
+    db.close();
+  });
+});
+
+describe("the cache schema", () => {
+  it("creates the transaction tables at the current version", () => {
+    const db = openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" });
+
+    // "transaction_sync" sorts before "transactions": _ is 0x5F, s is 0x73.
+    assert.deepEqual(tableNames(db), ["transaction_sync", "transactions"]);
+    assert.equal(userVersion(db), targetVersion(CACHE_MIGRATIONS));
     db.close();
   });
 });

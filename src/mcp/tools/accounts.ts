@@ -6,14 +6,9 @@ import { z } from "zod";
 
 import { collectAccounts } from "../../core/accounts.ts";
 import { ACCOUNT_TYPES, type Account, type CreditDetails } from "../../core/account.ts";
-import type { Logger } from "../../core/contracts.ts";
-import { prune, toDecimal } from "../format.ts";
+import { toDecimal } from "../format.ts";
 import type { Source } from "../source.ts";
-
-export type ToolDeps = {
-  readonly source: Source;
-  readonly log: Logger;
-};
+import { configurationProblems, finishToolError, textResult, type ToolDeps } from "./result.ts";
 
 const getBalanceByAccountInput = z.object({ accountId: z.string().min(1) });
 
@@ -125,25 +120,6 @@ async function getConfiguredAccount(source: Extract<Source, { readonly ok: true 
   }
 }
 
-function finishToolError(
-  log: Logger,
-  startedAt: number,
-  message: string,
-  fields: Readonly<Record<string, unknown>>,
-): CallToolResult {
-  log.info({ durationMs: Date.now() - startedAt, outcome: "tool-error", ...fields }, "Tool finished with an error");
-
-  return { content: [{ type: "text", text: message }], isError: true };
-}
-
-function configurationProblems(problems: readonly string[]): string {
-  return `Configuration problems:\n${problems.join("\n")}`;
-}
-
-function textResult(payload: unknown): CallToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(prune(payload)) }] };
-}
-
 function formatAccount(account: Account): unknown {
   let amountField: { usedCredit: string } | { balance: string };
   if (account.type === ACCOUNT_TYPES.credit) {
@@ -152,7 +128,7 @@ function formatAccount(account: Account): unknown {
     amountField = { balance: toDecimal(account.amountCents) };
   }
 
-  return prune({
+  return {
     id: account.id,
     connectionId: account.connectionId,
     institution: account.institution,
@@ -163,7 +139,7 @@ function formatAccount(account: Account): unknown {
     currency: account.currency,
     lastUpdatedAt: account.lastUpdatedAt?.toISOString() ?? null,
     credit: formatCredit(account.credit),
-  });
+  };
 }
 
 function formatCredit(credit: CreditDetails | null): unknown {

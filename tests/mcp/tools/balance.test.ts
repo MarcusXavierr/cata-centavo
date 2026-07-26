@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { account, connection, threeConnections } from "../../fakes/fake-bank.ts";
 import { fakeLogger } from "../../fakes/fake-logger.ts";
 import { fakeSource } from "../../fakes/fake-source.ts";
+import type { Source } from "../../../src/mcp/source.ts";
 import { handleGetBalance, registerGetBalance } from "../../../src/mcp/tools/balance.ts";
 
 function message(result: { readonly content: readonly { readonly type: string; readonly text?: string }[] }): string {
@@ -19,6 +20,14 @@ function message(result: { readonly content: readonly { readonly type: string; r
 
 function payload(result: { readonly content: readonly { readonly type: string; readonly text?: string }[] }): Record<string, unknown> {
   return JSON.parse(message(result)) as Record<string, unknown>;
+}
+
+function deps(source: Source, log: ReturnType<typeof fakeLogger>) {
+  let reader = null;
+  if (source.ok) {
+    reader = source.reader;
+  }
+  return { source, log, reader, clock: { now: () => new Date() } };
 }
 
 describe("getBalance", () => {
@@ -55,7 +64,7 @@ describe("getBalance", () => {
 
   for (const refusal of refusals) {
     it(`refuses when ${refusal.why}`, async () => {
-      const result = await handleGetBalance({ source: refusal.source(), log });
+      const result = await handleGetBalance(deps(refusal.source(), log));
 
       assert.equal(result.isError, true);
       assert.match(message(result), refusal.expect);
@@ -75,7 +84,7 @@ describe("getBalance", () => {
       },
     });
 
-    const result = await handleGetBalance({ source, log });
+    const result = await handleGetBalance(deps(source, log));
 
     assert.equal(result.isError, undefined);
     assert.deepEqual(payload(result), {
@@ -102,7 +111,7 @@ describe("getBalance", () => {
       },
     });
 
-    const result = await handleGetBalance({ source, log });
+    const result = await handleGetBalance(deps(source, log));
     const summary = payload(result);
 
     assert.equal(summary.creditUsed, "98.52");
@@ -117,7 +126,7 @@ describe("getBalance", () => {
       },
     });
 
-    const result = await handleGetBalance({ source, log });
+    const result = await handleGetBalance(deps(source, log));
     const resultPayload = payload(result);
 
     assert.equal(resultPayload.cash, "300.00");
@@ -130,7 +139,7 @@ describe("getBalance", () => {
       accounts: { "conn-1": [account("bank", { amountCents: 30_000 })] },
     });
 
-    const result = await handleGetBalance({ source, log });
+    const result = await handleGetBalance(deps(source, log));
     const resultPayload = payload(result);
 
     assert.ok(!("invested" in resultPayload));
@@ -145,7 +154,7 @@ describe("getBalance", () => {
       },
     };
 
-    registerGetBalance(server as unknown as McpServer, { source: fakeSource(), log });
+    registerGetBalance(server as unknown as McpServer, deps(fakeSource(), log));
 
     assert.equal(registrations.length, 1);
     const registration = registrations[0];
