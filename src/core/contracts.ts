@@ -7,6 +7,8 @@
  */
 
 import type { Account } from "./account.ts";
+import type { TaxonomyEntry } from "./taxonomy.ts";
+import type { Transaction } from "./transaction.ts";
 
 /** Injectable time. Every freshness and expiry rule reads the clock (ADR §7). */
 export type Clock = {
@@ -93,4 +95,38 @@ export type Bank = {
   getAccounts(connectionId: string): Promise<readonly Account[]>;
   /** Rejects with a NotFoundError when Pluggy does not know the id. */
   getAccount(accountId: string): Promise<Account>;
+  /** Every transaction on one account, walked to the end of the cursor. */
+  getTransactions(account: Account): Promise<readonly Transaction[]>;
+  /** Pluggy's category tree, cached per client. */
+  getCategories(): Promise<readonly TaxonomyEntry[]>;
+};
+
+/** What a cached transaction range is filtered by. */
+export type TransactionFilter = {
+  readonly accountIds: readonly string[];
+  readonly from: string;
+  readonly to: string;
+  readonly categories?: readonly string[];
+  readonly minAmountCents?: number;
+  readonly maxAmountCents?: number;
+  readonly accountType?: Account["type"];
+  readonly accountSubtype?: string;
+  readonly limit?: number;
+  readonly after?: { readonly localDate: string; readonly id: string };
+};
+
+/** The synchronous relational cache core requires of whoever serves it. */
+export type TransactionStore = {
+  /** `undefined` when never walked; `null` when walked against an unknown update time. */
+  syncedLastUpdatedAt(accountId: string): string | null | undefined;
+  replaceAccount(
+    accountId: string,
+    connectionId: string,
+    rows: readonly Transaction[],
+    lastUpdatedAt: string | null,
+  ): number;
+  query(filter: TransactionFilter): readonly Transaction[];
+  byIds(ids: readonly string[]): readonly Transaction[];
+  /** The newest `local_date` at or before `today`, per connection. */
+  dataThrough(accountIds: readonly string[], today: string): ReadonlyMap<string, string>;
 };

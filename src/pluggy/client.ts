@@ -2,12 +2,63 @@ import type { z } from "zod";
 
 import type { Account } from "../core/account.ts";
 import type { Bank, Connection } from "../core/contracts.ts";
-import { failureFor, parse, readJson } from "./errors.ts";
-import { toAccount, toConnection } from "./mapper.ts";
+import { failureFor, parse, readJson, ResponseShapeError } from "./errors.ts";
+import { toAccount, toConnection, toTransaction } from "./mapper.ts";
 import { createTransport, type TransportOptions } from "./transport.ts";
-import { ACCOUNT, ACCOUNT_PAGE, ITEM } from "./wire.ts";
+import { ACCOUNT, ACCOUNT_PAGE, CATEGORY_PAGE, ITEM, parseCategoryPage, TRANSACTION_PAGE } from "./wire.ts";
 
 export type PluggyClientOptions = TransportOptions;
+
+type Getter = <T>(path: string, schema: z.ZodType<T>, describe: string) => Promise<T>;
+
+const MAX_TRANSACTION_HOPS = 500;
+
+function createTransactionWalker(get: Getter): (account: Account) => Promise<readonly ReturnType<typeof toTransaction>[]> {
+  return async (account) => {
+    const transactions: ReturnType<typeof toTransaction>[] = [];
+    const seenIds = new Set<string>();
+    let query = `?accountId=${encodeURIComponent(account.id)}`;
+
+    for (let hop = 0; hop < MAX_TRANSACTION_HOPS; hop += 1) {
+      const page = await get(`/v2/transactions${query}`, TRANSACTION_PAGE, `transactions ${account.id}`);
+
+      for (const row of page.results) {
+        if (seenIds.has(row.id)) {
+          throw new ResponseShapeError(`Transaction ${row.id} was already seen while walking ${account.id}`);
+        }
+        seenIds.add(row.id);
+        transactions.push(toTransaction(row, account));
+      }
+
+      if (page.next === null) {
+        return transactions;
+      }
+
+      if (page.next === query) {
+        throw new ResponseShapeError(`The cursor stopped advancing while walking ${account.id}`);
+      }
+
+      query = page.next;
+    }
+
+    throw new ResponseShapeError(`Walking ${account.id} exceeded ${MAX_TRANSACTION_HOPS} pages without reaching the end`);
+  };
+}
+
+function createCategoryFetcher(get: Getter): () => Promise<ReturnType<typeof parseCategoryPage>> {
+  let categories: Promise<ReturnType<typeof parseCategoryPage>> | null = null;
+
+  return () => {
+    categories ??= get("/categories?pageSize=500&page=1", CATEGORY_PAGE, "categories")
+      .then((page) => parseCategoryPage(page))
+      .catch((error: unknown) => {
+        categories = null;
+        throw error;
+      });
+
+    return categories;
+  };
+}
 
 /**
  * The Pluggy client, written rather than taken from `pluggy-sdk`.
@@ -33,6 +84,9 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
 
     return parse(schema, await readJson(response), describe);
   }
+
+  const walkTransactions = createTransactionWalker(get);
+  const fetchCategories = createCategoryFetcher(get);
 
   return {
     verifyCredentials: async () => {
@@ -69,5 +123,8 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
       const item = await get(`/items/${encodeURIComponent(account.itemId)}`, ITEM, `connection ${account.itemId}`);
       return toAccount(account, toConnection(item));
     },
+
+    getTransactions: (account) => walkTransactions(account),
+    getCategories: () => fetchCategories(),
   };
 }
