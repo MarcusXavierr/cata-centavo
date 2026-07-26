@@ -42,6 +42,8 @@
     "deps": "depcruise src tests --output-type plugin:$PWD/tools/depcruise-reporter-agent.js",
     "test": "node --test",
     "test:watch": "node --test --watch",
+    "precoverage": "node -e \"require('node:fs').mkdirSync('coverage', { recursive: true })\"",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info",
     "mutation": "stryker run && npm run mutation:report",
     "mutation:report": "node tools/stryker-report-agent.js",
     "build": "tsc -p tsconfig.build.json",

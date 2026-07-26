@@ -35,4 +35,8 @@ jobs:
 
       - run: npm test
 
+      # A report, not a gate. Coverage shows what the suite cannot see; mutation
+      # testing checks whether the covered code is asserted meaningfully.
+      - run: npm run coverage
+
       - run: npm run build
