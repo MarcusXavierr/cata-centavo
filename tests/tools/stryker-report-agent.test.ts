@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { groupByMutator, hotspots, render, summarize } from "../../tools/stryker-report-agent.js";
+import {
+  groupByMutator,
+  hotspots,
+  render,
+  renderSummary,
+  summarize,
+} from "../../tools/stryker-report-agent.js";
 
 /** One mutant, with only the fields the reporter reads. */
 function mutant(status: string, mutatorName: string, line = 1) {
@@ -164,5 +170,38 @@ describe("render", () => {
     const output = render(report({ "src/a.ts": [mutant("Killed", "X")] }));
 
     assert.match(output, /no surviving mutants/i);
+  });
+});
+
+describe("renderSummary", () => {
+  const SURVIVORS = report({
+    "src/loud.ts": [mutant("Survived", "EqualityOperator", 1), mutant("NoCoverage", "BlockStatement", 2)],
+    "src/quiet.ts": [mutant("Killed", "X", 1), mutant("Survived", "ArithmeticOperator", 2)],
+  });
+
+  it("keeps the score and the hotspots", () => {
+    const output = renderSummary(SURVIVORS);
+
+    assert.match(output, /Score 25%/);
+    assert.match(output, /src\/loud\.ts/);
+  });
+
+  it("drops the per-mutant listing and the guidance, which is what makes it cheap", () => {
+    const output = renderSummary(SURVIVORS);
+
+    assert.doesNotMatch(output, /src\/loud\.ts:1:3/);
+    assert.doesNotMatch(output, /EqualityOperator/);
+    assert.ok(output.length < render(SURVIVORS).length);
+  });
+
+  it("points at the full report rather than pretending to be it", () => {
+    assert.match(renderSummary(SURVIVORS), /npm run mutation:report/);
+  });
+
+  it("congratulates without a hotspot table when nothing survived", () => {
+    const output = renderSummary(report({ "src/a.ts": [mutant("Killed", "X")] }));
+
+    assert.match(output, /no surviving mutants/i);
+    assert.doesNotMatch(output, /Hotspots/);
   });
 });
