@@ -106,7 +106,7 @@ No `services/`, no `utils/`, no `ports/`/`adapters/`. Tests live in `tests/`, no
 
 **Avoid comments. Write docblocks instead.** A `/** */` above an exported function, type or non-obvious constant is welcome; inline commentary explaining *what* the next three lines do is not — extract a named function. Comments that survive are the ones recording a decision the code cannot express: a runtime gotcha, an ADR reference, a "this looks wrong and here is why it isn't".
 
-Run text through the `humanizer` skill when writing prose (docblocks, README, ADRs, PR descriptions) to strip AI tells.
+Run text through the `humanizer` skill when writing prose (docblocks, README, PR descriptions) to strip AI tells. You don't need to use it to write designs and plans
 
 ### Testing
 
