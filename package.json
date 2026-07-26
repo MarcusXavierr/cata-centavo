@@ -39,6 +39,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests --format ./tools/eslint-formatter-agent.js",
     "lint:fix": "eslint src tests --fix --format ./tools/eslint-formatter-agent.js",
+    "lint:sensor": "eslint src tests --format ./tools/eslint-formatter-sensor.js",
     "deps": "depcruise src tests --output-type plugin:$PWD/tools/depcruise-reporter-agent.js",
     "test": "node --test",
     "test:watch": "node --test --watch",

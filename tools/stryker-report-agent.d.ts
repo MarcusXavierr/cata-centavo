@@ -39,3 +39,4 @@ export declare function summarize(report: MutationReport): Summary;
 export declare function groupByMutator(report: MutationReport): MutatorGroup[];
 export declare function hotspots(report: MutationReport): Hotspot[];
 export declare function render(report: MutationReport): string;
+export declare function renderSummary(report: MutationReport): string;

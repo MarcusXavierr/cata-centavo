@@ -1,0 +1,74 @@
+version: 1
+
+# Böckeler's "Sensors for coding agents" (Martin Fowler, 2026) calls the guide
+# the least reliable of the three integration paths. This prompt is the guide;
+# .claude/settings.json carries the hook that does not depend on being read.
+prompt: >-
+  These sensors report; only `structure` and `types` describe something that
+  fails the build. Fix what they report even if you did not introduce it, unless
+  the fix is large or risky — say so instead of leaving it silent. `cov` and
+  `mut_state` are informational: read them, do not chase them.
+
+# Intervals are staggered on purpose. The whole set runs in under eight seconds
+# of CPU, but two sensors firing on the same tick makes both of them slower than
+# either is worth.
+runners:
+
+  - name: tests
+    parser: default
+    enabled: true
+    mode: interval
+    command: .sensors/node.sh node tools/test-sensor.js
+    interval: 8000
+
+  - name: lint
+    parser: eslint
+    enabled: true
+    mode: interval
+    command: .sensors/node.sh npm run -s lint:sensor
+    interval: 11000
+
+  - name: types
+    parser: tsc
+    enabled: true
+    mode: interval
+    command: .sensors/node.sh npx tsc --noEmit
+    interval: 17000
+
+  - name: structure
+    parser: depcruise
+    enabled: true
+    mode: interval
+    command: .sensors/node.sh npx depcruise src tests --output-type err-long
+    interval: 23000
+
+  - name: cov
+    parser: default
+    enabled: true
+    mode: interval
+    command: .sensors/node.sh node tools/coverage-sensor.js
+    interval: 41000
+
+  - name: security
+    parser: semgrep
+    enabled: true
+    mode: interval
+    command: semgrep --config p/typescript --config p/javascript --json src
+    interval: 97000
+
+  # 48 seconds a run, and the score is a conversation rather than a pass mark —
+  # docs/plans/2026-07-26-mutation-testing-design.md settled that. Triggered, so
+  # it is not on a clock. Note that the sidecar fires triggered runners once at
+  # startup, so `start` costs those 48 seconds.
+  - name: mutation
+    parser: stryker
+    enabled: true
+    mode: triggered
+    command: .sensors/node.sh npm run mutation
+    result: reports/mutation/mutation.json
+
+  # The last mutation result, read on every check without re-running Stryker.
+  - name: mut_state
+    enabled: true
+    mode: on_check
+    command: .sensors/node.sh node tools/stryker-report-agent.js --summary

@@ -40,6 +40,25 @@ node --test --test-name-pattern="unknown command"
 
 **Always run `npm run typecheck` before `npm run lint` before `npm run deps` before `npm test`.** Node strips types without checking them: `const x: number = "string"` runs fine. Without `tsc`, the project has no type checking at all. Typecheck first, then lint, then dependency rules, then tests, then build — the same order CI uses.
 
+## The sensors sidecar
+
+`sensors` runs all of the above on intervals in the background and answers with a summary instead of six tool invocations' worth of output. Installed globally with `uv tool install git+https://github.com/birgitta410/sensors-cli`; it is not a devDependency, and everything works without it.
+
+**Always go through `.sensors/cli.sh`, never a bare `sensors`.** Fedora's `lm_sensors` package owns `/usr/bin/sensors`, so on this machine the name belongs to two programs and which one answers depends on PATH order. It works in an interactive shell and fails in anything with a sanitized environment. `cli.sh` resolves the right one and forwards.
+
+```bash
+.sensors/cli.sh start .          # background; the eight runners in .sensors/cata-centavo.sensors.yaml
+.sensors/cli.sh start --show .   # foreground, live table
+.sensors/cli.sh check .          # what to read: one table, exit 1 if a sensor failed
+.sensors/cli.sh stop .
+```
+
+**Read `.sensors/cli.sh check .` instead of running the checks by hand when it is running.** A `Stop` hook in `.claude/settings.json` runs it at the end of every turn and blocks on a failure. It stays silent when the sidecar is not running, so starting it is optional.
+
+Reading the table: `structure` and `types` describe things that fail the build. `lint` warns. `cov` and `mut_state` are informational and should not be chased. `mutation` is triggered rather than scheduled, but `start` fires it once, so starting the sidecar costs Stryker's 48 seconds.
+
+Design and the traps found on Linux: `docs/plans/2026-07-26-sensors-sidecar-design.md`.
+
 ## Runtime constraints that bite
 
 - **Node 24 (`.nvmrc` = v24.15.0)**, native type stripping, no `tsx`/`ts-node`, no build step in dev.
@@ -140,3 +159,6 @@ Research → Plan → Implement → Validate. Propose the approach and confirm i
 
 # Language
 Always use English in the code, comments and documentation.
+
+# GIT
+Don'e EVER use git worktrees unless I ask you to.

@@ -49,8 +49,9 @@ code that no test names will let its comparison mutate freely.`,
   ArithmeticOperator: `An operator flipped (+ to -, * to /) with every test still passing.
 The value is computed but never asserted.
 
-The backoff in src/core/refresh.ts is the case to check first —
-asserting how many times it slept does not assert how long it slept.`,
+The key expiry and the 429 backoff in src/pluggy/transport.ts are the
+cases to check first — asserting how many times it slept does not assert
+how long it slept.`,
 
   BlockStatement: `An entire function body was emptied and the suite did not notice. The
 function is called but its effect is never checked.
@@ -218,41 +219,81 @@ function renderHotspots(ranked) {
   ].join("\n");
 }
 
+function renderScore(summary) {
+  return summary.score === null
+    ? "No viable mutants — check the `mutate` globs."
+    : `Score ${summary.score}% overall, ${summary.scoreCovered}% of covered code ` +
+        `(${summary.detected} detected of ${summary.viable} viable).`;
+}
+
+function renderCounts(summary) {
+  return (
+    `${summary.survived} survived, ${summary.noCoverage} never covered` +
+    `${summary.invalid === 0 ? "" : `, ${summary.invalid} not viable`}. `
+  );
+}
+
+const NOTHING_SURVIVED = "No surviving mutants. Every viable mutation was caught.";
+
 export function render(report) {
   const summary = summarize(report);
   const groups = groupByMutator(report);
+  const score = renderScore(summary);
 
-  const score =
-    summary.score === null
-      ? "No viable mutants — check the `mutate` globs."
-      : `Score ${summary.score}% overall, ${summary.scoreCovered}% of covered code ` +
-        `(${summary.detected} detected of ${summary.viable} viable).`;
+  if (groups.length === 0) return ["", score, NOTHING_SURVIVED, ""].join("\n");
 
-  if (groups.length === 0) {
-    return ["", score, "No surviving mutants. Every viable mutation was caught.", ""].join("\n");
-  }
-
-  const footer =
-    `${score}\n` +
-    `${summary.survived} survived, ${summary.noCoverage} never covered` +
-    `${summary.invalid === 0 ? "" : `, ${summary.invalid} not viable`}. ` +
-    `This sensor never fails the build.`;
+  const footer = `${score}\n${renderCounts(summary)}This sensor never fails the build.`;
 
   return ["", ...groups.map(renderGroup), renderHotspots(hotspots(report)), footer, ""].join("\n");
 }
 
+/**
+ * The score and the hotspots, without the per-mutant listing or the guidance.
+ *
+ * The sidecar's `on_check` mode pastes a command's output straight into the
+ * agent's context on every check. The full report is a hundred lines of mutants
+ * an agent did not ask for; the score and the three worst files are the part
+ * that changes a decision.
+ */
+export function renderSummary(report) {
+  const summary = summarize(report);
+  const ranked = hotspots(report);
+  const score = renderScore(summary);
+
+  if (ranked.length === 0) return ["", score, NOTHING_SURVIVED, ""].join("\n");
+
+  return [
+    "",
+    score,
+    `${renderCounts(summary)}Full report: \`npm run mutation:report\`.`,
+    "",
+    renderHotspots(ranked.slice(0, 3)),
+  ].join("\n");
+}
+
 function main() {
+  const summaryOnly = process.argv.includes("--summary");
   let raw;
 
   try {
     raw = readFileSync(REPORT, "utf8");
   } catch {
-    process.stderr.write(`No report at ${REPORT}. Run \`npm run mutation\` first.\n`);
+    const absent = `No report at ${REPORT}. Run \`npm run mutation\` first.\n`;
+
+    // Under --summary this runs on every `sensors check`, where a missing report
+    // is the normal state of a sensor nobody has triggered yet, not a failure.
+    if (summaryOnly) {
+      process.stdout.write(absent);
+      return;
+    }
+
+    process.stderr.write(absent);
     process.exitCode = 1;
     return;
   }
 
-  process.stdout.write(render(JSON.parse(raw)));
+  const report = JSON.parse(raw);
+  process.stdout.write(summaryOnly ? renderSummary(report) : render(report));
 }
 
 if (process.argv[1]?.endsWith("stryker-report-agent.js")) {
