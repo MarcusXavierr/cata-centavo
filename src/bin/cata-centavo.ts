@@ -10,9 +10,11 @@ import { loadConfig, resolvePaths } from "../config.ts";
 import { createLogger } from "../logging.ts";
 import { createServer } from "../mcp/server.ts";
 import type { Source } from "../mcp/source.ts";
+import { createTransactionReader } from "../core/transactions.ts";
 import { createPluggyClient } from "../pluggy/client.ts";
 import { toFailure } from "../pluggy/errors.ts";
-import { openDatabases, schemaVersion } from "../storage/db.ts";
+import { createTransactionStore } from "../storage/transactions.ts";
+import { openDatabases, schemaVersion, type Databases } from "../storage/db.ts";
 
 const USAGE = `cata-centavo — Brazilian Open Finance over MCP
 
@@ -86,9 +88,18 @@ const sleep = (milliseconds: number): Promise<void> =>
   });
 
 /** Builds the source the server runs against, or the problems that block it, from a loaded config. */
-function toSource(result: ReturnType<typeof loadConfig>, log: ReturnType<typeof createLogger>): Source {
+function toSource(
+  result: ReturnType<typeof loadConfig>,
+  log: ReturnType<typeof createLogger>,
+  reader?: ReturnType<typeof createTransactionReader>,
+): Source {
   if (!result.ok) {
     return { ok: false, problems: result.problems };
+  }
+
+  if (reader === undefined) {
+    const problem = "Local transaction cache is unavailable.";
+    return { ok: false, problems: [problem], databaseProblems: [problem] };
   }
 
   return {
@@ -102,7 +113,28 @@ function toSource(result: ReturnType<typeof loadConfig>, log: ReturnType<typeof 
       log,
     }),
     toFailure,
+    reader,
   };
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function closeOnShutdown(databases: Databases): void {
+  let closed = false;
+  const close = (): void => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    databases.close();
+  };
+  process.once("SIGINT", close);
+  process.once("SIGTERM", close);
 }
 
 async function run(command: Command): Promise<number> {
@@ -125,18 +157,61 @@ async function run(command: Command): Promise<number> {
   }
 
   if (command === COMMANDS.serve) {
-    const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
-    const log = createLogger({ env: process.env, logFile: paths.logFile });
-    const result = loadConfig(process.env);
-    const source = toSource(result, log);
-
-    await createServer({ source, version: readVersion(), log }).connect(new StdioServerTransport());
-    return 0;
+    return runServe();
   }
 
   // Phases 1 and 7 of the roadmap (ADR §15).
   say(`[stub] command "${command}" is not implemented yet`);
   return 1;
+}
+
+async function runServe(): Promise<number> {
+  const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
+  const log = createLogger({ env: process.env, logFile: paths.logFile });
+  const source = createServeSource(loadConfig(process.env), paths, log);
+
+  await createServer({ source, version: readVersion(), log }).connect(new StdioServerTransport());
+  return 0;
+}
+
+function createServeSource(
+  result: ReturnType<typeof loadConfig>,
+  paths: ReturnType<typeof resolvePaths>,
+  log: ReturnType<typeof createLogger>,
+): Source {
+  if (!result.ok) {
+    return toSource(result, log);
+  }
+
+  try {
+    const databases = openDatabases(paths);
+    closeOnShutdown(databases);
+    return createReadySource(result, databases, log);
+  } catch (error) {
+    const problem = `Local storage is unavailable: ${describe(error)}`;
+    return { ok: false, problems: [problem], databaseProblems: [problem] };
+  }
+}
+
+function createReadySource(
+  result: Extract<ReturnType<typeof loadConfig>, { readonly ok: true }>,
+  databases: Databases,
+  log: ReturnType<typeof createLogger>,
+): Source {
+  const bank = createPluggyClient({
+    credentials: result.config.credentials,
+    clock: systemClock,
+    fetch: globalThis.fetch,
+    sleep,
+    log,
+  });
+  const reader = createTransactionReader({
+    bank,
+    store: createTransactionStore(databases.cache),
+    toFailure,
+    log,
+  });
+  return toSource(result, log, reader);
 }
 
 const invocation = resolveInvocation(process.argv.slice(2));
