@@ -53,11 +53,13 @@ export type WireItem = z.infer<typeof ITEM>;
 
 /**
  * Pluggy's error envelope. Read on every non-2xx, because the status alone is not
- * a diagnosis: `PATCH /items/{id}` documents four different 400s — a token that
- * needs renewing, an MFA parameter reused from the last execution, too many
- * consecutive errors, too many consecutive login failures — and only the body
- * says which. Throwing "Pluggy returned 400" and dropping the rest is §16.2's
- * scar, where the evidence was deleted before a human could see it.
+ * a diagnosis: one 400 means a malformed request, another means a consent the
+ * user revoked, and only `codeDescription` and `message` separate them. Throwing
+ * "Pluggy returned 400" and dropping the rest is §16.2's scar, where the evidence
+ * was deleted before a human could see it.
+ *
+ * Every field is optional and `data` falls back rather than failing, because an
+ * error we cannot fully parse is still an error worth reporting.
  */
 export const API_ERROR = z.object({
   codeDescription: z.string().nullish(),
@@ -66,41 +68,4 @@ export const API_ERROR = z.object({
     .object({ canRetryAfterDate: z.string().nullish() })
     .nullish()
     .catch(null),
-});
-
-/**
- * The one 400 that is an answer rather than a failure, recognised by its prose
- * because Pluggy gives us nothing else to recognise it by.
- *
- * Some connectors have no on-demand update at all, and asking anyway returns
- * `{"message": "MeuPluggy item cant be updated", "code": 400, "errorId": "…"}`
- * — verbatim from connector 200 on 2026-07-26, their typo included. Note what is
- * missing: no `codeDescription`, and `code` is the HTTP status echoed back rather
- * than a symbolic one. The refusal is undocumented (the four 400s in
- * `reference/items-update` all carry a `codeDescription`, and none of them is
- * this), and no connector field marks the capability either — `GET /connectors/200`
- * has `hasMFA`, `oauth`, `health`, `isOpenFinance`, `isSandbox` and five
- * `supports*` payment booleans, and nothing about updates. See
- * `docs/research/pluggy-item-update.md`.
- *
- * So: prose, deliberately, and the spelling is theirs — hence all three of
- * "cant", "can't" and "cannot", case-insensitively.
- */
-export function refusesManualUpdate(detail: string | null): boolean {
-  return detail !== null && /\bca(?:nn?ot|n'?t)\s+be\s+updated\b/i.test(detail);
-}
-
-/**
- * The body of a 409 from `PATCH /items/{id}`, described loosely on purpose. It
- * carries the interval Pluggy enforces and when the last sync landed, both worth
- * repeating to the user — but a refusal we cannot parse is still a refusal, so
- * every field here is optional and the caller copes with nulls.
- */
-export const UPDATE_REFUSED = z.object({
-  data: z
-    .object({
-      minUpdateFrequencyAllowedInHours: z.number().nullish(),
-      lastUpdatedAt: z.string().nullish(),
-    })
-    .nullish(),
 });

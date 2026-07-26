@@ -11,7 +11,7 @@ export type Clock = {
   now(): Date;
 };
 
-/** The other half of injectable time: waiting, for backoffs and poll loops. */
+/** The other half of injectable time: waiting, for the transport's 429 backoff. */
 export type Sleep = (milliseconds: number) => Promise<void>;
 
 /** What travels with a log line. Never a secret's value (ADR §16.2). */
@@ -66,38 +66,10 @@ export type Connection = {
   readonly warnings: readonly string[];
 };
 
-/**
- * What Pluggy says the moment a refresh is asked for. Two of the three answers
- * are refusals and neither is a failure.
- *
- * `too-soon`: Pluggy enforces a minimum interval between updates per client and
- * refuses with the timestamp of the last one, which is the debounce ADR §11
- * wanted and never had to build.
- *
- * `not-refreshable`: the connector has no on-demand update at all, whatever
- * state the connection is in. It carries nothing because there is nothing to
- * carry — the connection is exactly as it was before we asked, and the caller
- * already holds it.
- */
-export type RefreshStart =
-  | { readonly kind: "started"; readonly connection: Connection }
-  | {
-      readonly kind: "too-soon";
-      readonly everyHours: number | null;
-      readonly lastUpdatedAt: Date | null;
-    }
-  | { readonly kind: "not-refreshable" };
-
 /** What `init` needs from whoever holds the credentials. */
 export type Bank = {
   /** Rejects when the credentials are refused. One round trip, no side effects. */
   verifyCredentials(): Promise<void>;
   /** Rejects when the id is unknown, or when the request cannot be made. */
   getConnection(id: string): Promise<Connection>;
-  /**
-   * Asks the institution for fresh data. Costs Open Finance product quota and is
-   * rate limited an order of magnitude tighter than the read paths, so it fires
-   * only when a human asked for it — never on a schedule (§11).
-   */
-  refreshConnection(id: string): Promise<RefreshStart>;
 };

@@ -4,9 +4,9 @@ import { classify, parse, readJson } from "./errors.ts";
 import { AUTH_RESPONSE } from "./wire.ts";
 
 /**
- * Everything between us and Pluggy's HTTP: the two rate-limit windows, the API
- * key and its renewal, and the retries that belong to the wire rather than to
- * any endpoint.
+ * Everything between us and Pluggy's HTTP: the rate-limit window, the API key
+ * and its renewal, and the retries that belong to the wire rather than to any
+ * endpoint.
  *
  * It is a module of its own so that `client.ts` can be about connections. The
  * split also keeps the promise §16.2 asks for readable: there is one function
@@ -39,14 +39,6 @@ const KEY_FALLBACK_LIFETIME_MS = 2 * 60 * 60 * 1000;
  */
 export const RATE_LIMIT = { requests: 360, windowMs: 60_000 } as const;
 
-/**
- * `PATCH /items` is an order of magnitude tighter than everything else — 20 a
- * minute against 360 — because Pluggy means it for user-triggered refreshes and
- * says so in the same breath. One shared window would let a fan-out of reads
- * spend a budget the updates need.
- */
-export const UPDATE_RATE_LIMIT = { requests: 20, windowMs: 60_000 } as const;
-
 /** How many times a 429 is worth waiting out before it becomes the caller's problem. */
 export const RATE_LIMIT_RETRIES = 2;
 
@@ -60,7 +52,6 @@ export type TransportOptions = {
   readonly clock: Clock;
   readonly fetch: Fetch;
   readonly limiter?: RateLimiter;
-  readonly updateLimiter?: RateLimiter;
   readonly sleep?: Sleep;
   readonly log: Logger;
   readonly baseUrl?: string;
@@ -72,9 +63,9 @@ export type Transport = {
   /**
    * An authenticated request, with the key renewed once on a 401 and a 429 waited
    * out for as long as Pluggy asks. Returns the response rather than throwing on
-   * it, because `refreshConnection` needs to read a 409 as an answer.
+   * it, so the caller decides which statuses are answers and which are failures.
    *
-   * Replaying a `PATCH` after either status is safe: both mean it never ran.
+   * Replaying after either status is safe: both mean the request never ran.
    */
   authorized(method: string, path: string, body?: unknown): Promise<Response>;
 };
@@ -120,20 +111,13 @@ type Send = (
 /**
  * The single send function. Everything reaching Pluggy passes through here, so
  * the rate limiter cannot be forgotten by a new endpoint — the bug §16.2 found
- * wired to two of nine call sites. Both windows are claimed here for the same
- * reason.
+ * wired to two of nine call sites.
  */
 function sender(options: TransportOptions): Send {
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   const limiter = options.limiter ?? slidingWindowLimiter(options.clock);
-  const updateLimiter =
-    options.updateLimiter ??
-    slidingWindowLimiter(options.clock, UPDATE_RATE_LIMIT.requests, UPDATE_RATE_LIMIT.windowMs);
 
   return async (method, path, extras) => {
-    if (triggersUpdate(method, path)) {
-      await updateLimiter.acquire();
-    }
     await limiter.acquire();
 
     const headers: Record<string, string> = { "content-type": "application/json" };
@@ -188,11 +172,6 @@ function keyResolver(options: TransportOptions, send: Send): KeyResolver {
 
     return refreshing;
   };
-}
-
-/** Only `PATCH /items/{id}` spends the update budget. */
-function triggersUpdate(method: string, path: string): boolean {
-  return method === "PATCH" && path.startsWith("/items/");
 }
 
 function retryAfterMs(response: Response): number {

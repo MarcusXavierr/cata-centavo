@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 
 import { COMMANDS, resolveInvocation, type Command } from "../cli/dispatch.ts";
 import { exitCodeFor, formatInit, runInit, type StorageInfo } from "../cli/init.ts";
-import { createProgress, type Progress } from "../cli/progress.ts";
 import { resolvePaths } from "../config.ts";
 import { createLogger } from "../logging.ts";
 import { createPluggyClient } from "../pluggy/client.ts";
@@ -77,52 +76,17 @@ const sleep = (milliseconds: number): Promise<void> =>
     setTimeout(resolve, milliseconds);
   });
 
-/**
- * The live region, on stderr like everything else a human reads. `unref` so a
- * spinner cannot be the reason the process refuses to exit.
- */
-function createStderrProgress(): Progress {
-  return createProgress({
-    write: (text) => process.stderr.write(text),
-    tty: process.stderr.isTTY ?? false,
-    interval: (callback, ms) => {
-      const timer = setInterval(callback, ms);
-      timer.unref();
-      return { cancel: () => clearInterval(timer) };
-    },
-  });
-}
-
 async function run(command: Command): Promise<number> {
   if (command === COMMANDS.init) {
     const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
     const log = createLogger({ env: process.env, logFile: paths.logFile });
-    const progress = createStderrProgress();
 
-    // A refresh can run for minutes, and Ctrl-C in the middle of it must not
-    // leave the terminal with a hidden cursor and half a spinner on it.
-    const interrupted = (): void => {
-      progress.stop();
-      process.exit(130);
-    };
-    process.once("SIGINT", interrupted);
-
-    let report;
-    try {
-      report = await runInit({
-        env: process.env,
-        prepareStorage: () => prepareStorage(paths),
-        createBank: (credentials) =>
-          createPluggyClient({ credentials, clock: systemClock, fetch: globalThis.fetch, sleep, log }),
-        sleep,
-        report: (rows) => {
-          progress.update(rows);
-        },
-      });
-    } finally {
-      progress.stop();
-      process.off("SIGINT", interrupted);
-    }
+    const report = await runInit({
+      env: process.env,
+      prepareStorage: () => prepareStorage(paths),
+      createBank: (credentials) =>
+        createPluggyClient({ credentials, clock: systemClock, fetch: globalThis.fetch, sleep, log }),
+    });
 
     for (const line of formatInit(report, systemClock)) {
       say(line);
