@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "id": "t-bank-1",
+      "accountId": "acc-bank",
+      "date": "2026-06-15T03:00:00.000Z",
+      "description": "PIX ENVIADO MARIA SILVA",
+      "descriptionRaw": null,
+      "amount": -150.5,
+      "amountInAccountCurrency": null,
+      "currencyCode": "BRL",
+      "category": "Transfers - PIX",
+      "categoryId": "05020000",
+      "status": "POSTED",
+      "paymentData": {
+        "receiver": { "name": "MARIA SILVA", "documentNumber": { "value": "123.456.789-00", "type": "CPF" } },
+        "paymentMethod": "PIX"
+      }
+    },
+    {
+      "id": "t-card-1",
+      "accountId": "acc-card",
+      "date": "2026-06-20T03:00:00.000Z",
+      "description": "PAG*DEIVYN LANCHES LTDA 03/12",
+      "descriptionRaw": "PAG*DEIVYN LANCHES LTDA 03/12",
+      "amount": 89.9,
+      "amountInAccountCurrency": null,
+      "currencyCode": "BRL",
+      "category": "Food and drinks",
+      "categoryId": "11000000",
+      "status": "POSTED",
+      "creditCardMetadata": {
+        "billId": "bill-1",
+        "payeeMCC": 5814,
+        "installmentNumber": 3,
+        "totalInstallments": 12,
+        "purchaseDate": "2026-04-20"
+      }
+    },
+    {
+      "id": "t-card-foreign",
+      "accountId": "acc-card",
+      "date": "2026-06-21T03:00:00.000Z",
+      "description": "STEAM PURCHASE",
+      "descriptionRaw": null,
+      "amount": 20.0,
+      "amountInAccountCurrency": 100.0,
+      "currencyCode": "USD",
+      "category": "Digital services",
+      "categoryId": "09000000",
+      "status": "POSTED",
+      "creditCardMetadata": { "billId": "bill-1", "payeeMCC": 5816 }
+    },
+    {
+      "id": "t-card-late",
+      "accountId": "acc-card",
+      "date": "2026-07-01T01:00:00.000Z",
+      "description": "PADARIA NOTURNA",
+      "descriptionRaw": null,
+      "amount": 12.0,
+      "amountInAccountCurrency": null,
+      "currencyCode": "BRL",
+      "category": "Food and drinks",
+      "categoryId": "11000000",
+      "status": "POSTED",
+      "creditCardMetadata": { "billId": "bill-1", "payeeMCC": 5812 }
+    },
+    {
+      "id": "t-card-subcent",
+      "accountId": "acc-card",
+      "date": "2026-06-22T03:00:00.000Z",
+      "description": "IOF",
+      "descriptionRaw": null,
+      "amount": 307.8891,
+      "amountInAccountCurrency": null,
+      "currencyCode": "BRL",
+      "category": "Bank fees",
+      "categoryId": "16000000",
+      "status": "PENDING",
+      "creditCardMetadata": { "billId": "bill-1", "feeType": "IOF" }
+    }
+  ],
+  "next": null
+}

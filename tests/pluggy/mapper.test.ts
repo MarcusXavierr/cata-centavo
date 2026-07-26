@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
+import type { Account } from "../../src/core/account.ts";
+import type { Transaction } from "../../src/core/transaction.ts";
 import { connection } from "../fakes/fake-bank.ts";
 import { ResponseShapeError } from "../../src/pluggy/errors.ts";
-import { toAccount, toCents, toConnection } from "../../src/pluggy/mapper.ts";
-import { ACCOUNT_PAGE, ITEM, type WireAccount } from "../../src/pluggy/wire.ts";
+import { toAccount, toCents, toConnection, toTransaction } from "../../src/pluggy/mapper.ts";
+import { ACCOUNT_PAGE, ITEM, TRANSACTION_PAGE, type WireAccount, type WireTransaction } from "../../src/pluggy/wire.ts";
 
 function accountFixture(name: string): WireAccount {
   const raw: unknown = JSON.parse(readFileSync(new URL(`../fixtures/${name}.json`, import.meta.url), "utf8"));
@@ -242,5 +244,138 @@ describe("toAccount", () => {
     );
 
     assert.deepEqual(connection.warnings, []);
+  });
+});
+
+const WIRE: ReadonlyMap<string, WireTransaction> = new Map(
+  TRANSACTION_PAGE.parse(
+    JSON.parse(readFileSync(new URL("../fixtures/transactions-page.json", import.meta.url), "utf8")),
+  ).results.map((row) => [row.id, row]),
+);
+
+function wireRow(id: string): WireTransaction {
+  const found = WIRE.get(id);
+  assert.ok(found, `fixture is missing ${id}`);
+  return found;
+}
+
+const BANK_ACCOUNT: Account = {
+  id: "acc-bank",
+  connectionId: "conn-1",
+  institution: "Test Bank",
+  name: "Checking",
+  type: "BANK",
+  subtype: "CHECKING_ACCOUNT",
+  amountCents: 100_000,
+  currency: "BRL",
+  lastUpdatedAt: new Date("2026-07-26T12:00:00.000Z"),
+  credit: null,
+};
+
+const CARD_ACCOUNT: Account = { ...BANK_ACCOUNT, id: "acc-card", name: "Card", type: "CREDIT", subtype: "CREDIT_CARD" };
+
+describe("toTransaction", () => {
+  const SIGN_CASES: readonly { readonly name: string; readonly id: string; readonly account: Account; readonly cents: number }[] = [
+    { name: "a bank debit stays negative", id: "t-bank-1", account: BANK_ACCOUNT, cents: -15_050 },
+    { name: "a card purchase flips to negative", id: "t-card-1", account: CARD_ACCOUNT, cents: -8_990 },
+    { name: "a foreign card purchase flips and converts", id: "t-card-foreign", account: CARD_ACCOUNT, cents: -10_000 },
+  ];
+
+  for (const { name, id, account, cents } of SIGN_CASES) {
+    it(`normalizes the sign so money out is negative: ${name}`, () => {
+      assert.equal(toTransaction(wireRow(id), account).amountCents, cents);
+    });
+  }
+
+  it("denominates in the account's currency, not the purchase's", () => {
+    const transaction = toTransaction(wireRow("t-card-foreign"), CARD_ACCOUNT);
+
+    assert.equal(transaction.currency, "BRL");
+    assert.equal(transaction.originalCurrency, "USD");
+    assert.equal(transaction.originalAmountCents, -2_000);
+  });
+
+  it("leaves the original blank on a domestic purchase", () => {
+    const transaction = toTransaction(wireRow("t-card-1"), CARD_ACCOUNT);
+
+    assert.equal(transaction.originalCurrency, null);
+    assert.equal(transaction.originalAmountCents, null);
+  });
+
+  it("rounds sub-cent money through toCents rather than refusing", () => {
+    assert.equal(toTransaction(wireRow("t-card-subcent"), CARD_ACCOUNT).amountCents, -30_789);
+  });
+
+  const DATE_CASES: readonly { readonly name: string; readonly id: string; readonly localDate: string }[] = [
+    { name: "Brazilian midnight rendered as UTC", id: "t-card-1", localDate: "2026-06-20" },
+    { name: "a late evening purchase", id: "t-card-late", localDate: "2026-06-30" },
+  ];
+
+  for (const { name, id, localDate } of DATE_CASES) {
+    it(`truncates dates in São Paulo: ${name}`, () => {
+      assert.equal(toTransaction(wireRow(id), CARD_ACCOUNT).localDate, localDate);
+    });
+  }
+
+  const EXTRACTION_CASES: readonly {
+    readonly name: string;
+    readonly id: string;
+    readonly account: Account;
+    readonly expected: Partial<Transaction>;
+  }[] = [
+    {
+      name: "a bank row carries a document and a payment method, and no card fields",
+      id: "t-bank-1",
+      account: BANK_ACCOUNT,
+      expected: {
+        document: "12345678900",
+        counterpartyName: "MARIA SILVA",
+        paymentMethod: "PIX",
+        mcc: null,
+        billId: null,
+        instalmentNumber: null,
+        categoryId: "05020000",
+      },
+    },
+    {
+      name: "a card row carries card fields and no document",
+      id: "t-card-1",
+      account: CARD_ACCOUNT,
+      expected: {
+        document: null,
+        counterpartyName: null,
+        mcc: "5814",
+        billId: "bill-1",
+        instalmentNumber: 3,
+        instalmentTotal: 12,
+        purchaseDate: "2026-04-20",
+      },
+    },
+    {
+      name: "an omitted nested key reads as null, not undefined",
+      id: "t-card-foreign",
+      account: CARD_ACCOUNT,
+      expected: { instalmentNumber: null, instalmentTotal: null, purchaseDate: null },
+    },
+  ];
+
+  for (const { name, id, account, expected } of EXTRACTION_CASES) {
+    it(`extracts the detail fields: ${name}`, () => {
+      const transaction = toTransaction(wireRow(id), account);
+
+      for (const [key, value] of Object.entries(expected)) {
+        assert.deepEqual(transaction[key as keyof Transaction], value, key);
+      }
+    });
+  }
+
+  it("refuses an account type that cannot reach this endpoint", () => {
+    const investment: Account = { ...BANK_ACCOUNT, type: "INVESTMENT" };
+
+    assert.throws(() => toTransaction(wireRow("t-bank-1"), investment), /INVESTMENT/u);
+  });
+
+  it("reports an unparseable date as a wire problem", () => {
+    assert.throws(() => toTransaction({ ...wireRow("t-bank-1"), date: "nope" }, BANK_ACCOUNT), ResponseShapeError);
   });
 });
