@@ -1,17 +1,17 @@
 /**
- * Regras locais, definidas aqui em vez de num pacote porque servem só a este
- * repositório e não valem uma dependência. Consumidas como plugin inline no
- * `eslint.config.js`.
+ * Local rules, defined here rather than in a package because they serve this
+ * repository alone and are not worth a dependency. Consumed as an inline plugin
+ * from `eslint.config.js`.
  */
 
-/** Acima disto a resposta é refatorar, não afrouxar o sensor. */
+/** Past this the answer is to refactor, not to loosen the sensor. */
 const COMPLEXITY_CEILING = 7;
 
 const RAISES_COMPLEXITY = /^\s*eslint\s+complexity:\s*\[\s*["'](?:warn|error)["']\s*,\s*(\d+)/;
 
 /**
- * O ESLint aceita qualquer valor num override inline de regra. Sem esta regra,
- * `/* eslint complexity: ["warn", 20] *\/` desliga o sensor na prática.
+ * ESLint accepts any value in an inline rule override. Without this rule,
+ * `/* eslint complexity: ["warn", 20] *\/` switches the sensor off in practice.
  */
 const complexityCeiling = {
   meta: {
@@ -19,7 +19,7 @@ const complexityCeiling = {
     schema: [],
     messages: {
       tooHigh:
-        "Subir a complexidade para {{ asked }} não é permitido. O teto é {{ ceiling }}: acima disso, extraia os ramos em funções nomeadas em vez de afrouxar o sensor.",
+        "Raising complexity to {{ asked }} is not allowed. The ceiling is {{ ceiling }}: past that, extract the branches into named functions instead of loosening the sensor.",
     },
   },
   create(context) {
@@ -43,9 +43,9 @@ const complexityCeiling = {
 const DISABLE_DIRECTIVE = /^\s*eslint-disable(?:-next-line|-line)?\b/;
 
 /**
- * Uma supressão sem motivo é indistinguível de desistência. O artigo desenha a
- * supressão como saída legítima justamente porque ela fica visível no diff —
- * visível e sem explicação não serve.
+ * A suppression with no reason is indistinguishable from giving up. The article
+ * designs suppression as a legitimate exit precisely because it stays visible in
+ * the diff, and visible without an explanation is not enough.
  */
 const requireDisableReason = {
   meta: {
@@ -53,7 +53,7 @@ const requireDisableReason = {
     schema: [],
     messages: {
       noReason:
-        "Suprimir uma regra exige justificativa. Escreva `-- motivo` no fim da diretiva, explicando por que a regra está errada aqui.",
+        "Suppressing a rule requires a justification. Write `-- reason` at the end of the directive, explaining why the rule is wrong here.",
     },
   },
   create(context) {

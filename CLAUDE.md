@@ -17,7 +17,7 @@ nvm use                  # reads .nvmrc → v24.15.0
 
 npm run dev              # run the CLI from source (node executes .ts directly)
 npm run typecheck        # tsc --noEmit — this is the linter, see below
-npm run lint             # eslint como sensor — avisos informam, erros reprovam
+npm run lint             # eslint as a sensor: warnings inform, errors fail
 npm test                 # node --test, finds tests/**/*.test.ts
 npm run test:watch
 npm run build            # tsc -p tsconfig.build.json → dist/
@@ -128,3 +128,6 @@ Research → Plan → Implement → Validate. Propose the approach and confirm i
 - Explicit over implicit: clear names over clever abstractions, direct dependencies over service locators.
 - When stuck, stop — the simple solution is usually right. When choosing, ask: "A (simple) vs B (flexible), which do you prefer?"
 - Batch independent work: parallel reads and searches in one message, related edits grouped.
+
+# Language
+Always use English in the code, comments and documentation.

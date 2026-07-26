@@ -14,7 +14,7 @@ describe("complexity-ceiling", () => {
       { code: "const a = 1;" },
       { code: '/* eslint complexity: ["warn", 7] */\nconst a = 1;' },
       { code: '/* eslint complexity: ["error", 6] */\nconst a = 1;' },
-      { code: "// eslint-disable-next-line complexity -- motivo\nconst a = 1;" },
+      { code: "// eslint-disable-next-line complexity -- reason\nconst a = 1;" },
     ],
     invalid: [
       {
@@ -33,8 +33,8 @@ describe("require-disable-reason", () => {
   tester.run("require-disable-reason", localRules.rules["require-disable-reason"], {
     valid: [
       { code: "const a = 1;" },
-      { code: "// eslint-disable-next-line complexity -- factory, complexidade é acidental\nconst a = 1;" },
-      { code: "/* eslint-disable no-console -- script de diagnóstico */\nconst a = 1;" },
+      { code: "// eslint-disable-next-line complexity -- factory, complexity is incidental\nconst a = 1;" },
+      { code: "/* eslint-disable no-console -- diagnostic script */\nconst a = 1;" },
       { code: '/* eslint complexity: ["warn", 7] */\nconst a = 1;' },
     ],
     invalid: [

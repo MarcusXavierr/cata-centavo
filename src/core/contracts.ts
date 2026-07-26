@@ -14,13 +14,13 @@ export type Clock = {
 /** The other half of injectable time: waiting, for backoffs and poll loops. */
 export type Sleep = (milliseconds: number) => Promise<void>;
 
-/** O que acompanha uma linha de log. Nunca um valor de segredo (ADR §16.2). */
+/** What travels with a log line. Never a secret's value (ADR §16.2). */
 export type LogFields = Readonly<Record<string, unknown>>;
 
 /**
- * O logger que o core exige de quem o serve. Declarado aqui, e não junto do
- * pino, porque o contrato pertence a quem consome (ADR §6) — `core/` não
- * importa pino, e o teste passa um fake em vez de mockar módulo.
+ * The logger core requires of whoever serves it. Declared here rather than next
+ * to pino, because a contract belongs to its consumer (ADR §6): `core/` never
+ * imports pino, and the test passes a fake instead of mocking a module.
  */
 export type Logger = {
   debug(fields: LogFields, message: string): void;
