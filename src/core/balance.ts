@@ -2,7 +2,7 @@ import type { Account } from "./account.ts";
 
 export type Summary = {
   readonly cashCents: number;
-  readonly owedCents: number;
+  readonly creditUsedCents: number;
   readonly investedCents?: number;
   readonly loanCents?: number;
   readonly currency: string;
@@ -15,7 +15,7 @@ export type SummaryResult =
 
 type Totals = {
   cashCents: number;
-  owedCents: number;
+  creditUsedCents: number;
   investedCents: number;
   loanCents: number;
   hasInvestments: boolean;
@@ -29,7 +29,7 @@ function currenciesIn(accounts: readonly Account[]): readonly string[] {
 function sumBalances(accounts: readonly Account[]): Totals {
   const totals: Totals = {
     cashCents: 0,
-    owedCents: 0,
+    creditUsedCents: 0,
     investedCents: 0,
     loanCents: 0,
     hasInvestments: false,
@@ -42,7 +42,7 @@ function sumBalances(accounts: readonly Account[]): Totals {
         totals.cashCents += account.amountCents;
         break;
       case "CREDIT":
-        totals.owedCents += account.amountCents;
+        totals.creditUsedCents += account.amountCents;
         break;
       case "INVESTMENT":
         totals.investedCents += account.amountCents;
@@ -59,13 +59,27 @@ function sumBalances(accounts: readonly Account[]): Totals {
 }
 
 function createSummary(currency: string, accountsCounted: number, totals: Totals): Summary {
+  let investedFields: Pick<Summary, "investedCents"> | Record<string, never>;
+  if (totals.hasInvestments) {
+    investedFields = { investedCents: totals.investedCents };
+  } else {
+    investedFields = {};
+  }
+
+  let loanFields: Pick<Summary, "loanCents"> | Record<string, never>;
+  if (totals.hasLoans) {
+    loanFields = { loanCents: totals.loanCents };
+  } else {
+    loanFields = {};
+  }
+
   return {
     cashCents: totals.cashCents,
-    owedCents: totals.owedCents,
+    creditUsedCents: totals.creditUsedCents,
     currency,
     accountsCounted,
-    ...(totals.hasInvestments ? { investedCents: totals.investedCents } : {}),
-    ...(totals.hasLoans ? { loanCents: totals.loanCents } : {}),
+    ...investedFields,
+    ...loanFields,
   };
 }
 

@@ -4,6 +4,7 @@ export type RecordedRequest = {
   readonly method: string;
   readonly url: string;
   readonly apiKey: string | null;
+  readonly contentType: string | null;
   readonly body: unknown;
 };
 
@@ -32,11 +33,20 @@ export function fakeFetch(handler: Handler): FakeFetch {
 
   const call: Fetch = async (url, init) => {
     const headers = new Headers(init.headers);
+
+    let body: unknown;
+    if (typeof init.body === "string") {
+      body = JSON.parse(init.body);
+    } else {
+      body = undefined;
+    }
+
     const recorded: RecordedRequest = {
       method: init.method ?? "GET",
       url,
       apiKey: headers.get("X-API-KEY"),
-      body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+      contentType: headers.get("content-type"),
+      body,
     };
     const index = requests.length;
     requests.push(recorded);

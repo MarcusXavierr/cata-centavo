@@ -29,7 +29,12 @@ describe("resolveInvocation", () => {
   it("returns an unknown command as a value, not an exception", () => {
     const result = resolveInvocation(["migrate"]);
     assert.equal(result.kind, "error");
-    assert.match(result.kind === "error" ? result.message : "", /migrate/);
+
+    let message = "";
+    if (result.kind === "error") {
+      message = result.message;
+    }
+    assert.match(message, /migrate/);
   });
 
   it("returns an unknown flag as a value, not an exception", () => {
@@ -40,6 +45,11 @@ describe("resolveInvocation", () => {
   it("rejects a surplus positional argument", () => {
     const result = resolveInvocation(["doctor", "extra"]);
     assert.equal(result.kind, "error");
-    assert.match(result.kind === "error" ? result.message : "", /extra/);
+
+    let message = "";
+    if (result.kind === "error") {
+      message = result.message;
+    }
+    assert.match(message, /extra/);
   });
 });

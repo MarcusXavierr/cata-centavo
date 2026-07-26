@@ -171,7 +171,10 @@ export function schemaVersion(db: DatabaseSync): number {
 function readUserVersion(db: DatabaseSync): number {
   const value = db.prepare("PRAGMA user_version").get()?.["user_version"];
   const version = Number(value);
-  return Number.isInteger(version) ? version : 0;
+  if (Number.isInteger(version)) {
+    return version;
+  }
+  return 0;
 }
 
 /** `PRAGMA` takes no bound parameters, which is why the guard is here. */

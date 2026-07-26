@@ -5,7 +5,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { collectAccounts } from "../../core/accounts.ts";
-import type { Account, CreditDetails } from "../../core/account.ts";
+import { ACCOUNT_TYPES, type Account, type CreditDetails } from "../../core/account.ts";
 import type { Logger } from "../../core/contracts.ts";
 import { prune, toDecimal } from "../format.ts";
 import type { Source } from "../source.ts";
@@ -17,21 +17,21 @@ export type ToolDeps = {
 
 const getBalanceByAccountInput = z.object({ accountId: z.string().min(1) });
 
-const GET_ACCOUNTS_DESCRIPTION = `Lists every account across the configured bank connections.
+export const GET_ACCOUNTS_DESCRIPTION = `Lists every account across the configured bank connections.
 
 Use this tool when:
 - You need an account map before inspecting one account or filtering financial activity.
 - You need to see which configured connections could not provide account data.
 
-Returns: Per-account balances, which use different units: a CREDIT balance is an unpaid bill, not money held. Use getBalance to consolidate labelled figures safely.`;
+Returns: Per-account figures in different units. A BANK account reports \`balance\`, the money available. A credit card reports \`usedCredit\`, how much of its limit is currently taken — this mixes the cycle in progress with instalments not yet charged, so it is not what the card owes this month and does not match the statement in a banking app. No tool here reports a card's statement amount.`;
 
-const GET_BALANCE_BY_ACCOUNT_DESCRIPTION = `Gets the current balance and details for one account.
+export const GET_BALANCE_BY_ACCOUNT_DESCRIPTION = `Gets the current figures and details for one account.
 
 Use this tool when:
-- You need to check one account against its bank app.
-- You already know the account ID from getAccounts.
+- You need one account's numbers and already have its ID from getAccounts.
+- You need that account's credit limit and cycle dates.
 
-Returns: The account's balance, currency, type, credit details when applicable, and when its connection was last updated.`;
+Returns: For a BANK account, its balance. For a credit card, \`usedCredit\` — the portion of the limit currently taken, which is not the amount owed for the month. Also the currency, type, credit limit and cycle dates when applicable, and when the connection last supplied data.`;
 
 /** Registers the account map tool. */
 export function registerGetAccounts(server: McpServer, deps: ToolDeps): void {
@@ -81,7 +81,7 @@ export async function handleGetAccounts(deps: ToolDeps): Promise<CallToolResult>
   return textResult(response);
 }
 
-/** Gets the details and balance of one configured account. */
+/** Gets the figures and details of one configured account. */
 export async function handleGetBalanceByAccount(deps: ToolDeps, input: unknown): Promise<CallToolResult> {
   const startedAt = Date.now();
   const parsed = getBalanceByAccountInput.parse(input);
@@ -115,7 +115,10 @@ export async function handleGetBalanceByAccount(deps: ToolDeps, input: unknown):
 async function getConfiguredAccount(source: Extract<Source, { readonly ok: true }>, accountId: string): Promise<Account | null> {
   try {
     const account = await source.bank.getAccount(accountId);
-    return source.connections.includes(account.connectionId) ? account : null;
+    if (source.connections.includes(account.connectionId)) {
+      return account;
+    }
+    return null;
   } catch (error) {
     if (source.toFailure(error).kind === "unknown-connection") return null;
     throw error;
@@ -142,6 +145,13 @@ function textResult(payload: unknown): CallToolResult {
 }
 
 function formatAccount(account: Account): unknown {
+  let amountField: { usedCredit: string } | { balance: string };
+  if (account.type === ACCOUNT_TYPES.credit) {
+    amountField = { usedCredit: toDecimal(account.amountCents) };
+  } else {
+    amountField = { balance: toDecimal(account.amountCents) };
+  }
+
   return prune({
     id: account.id,
     connectionId: account.connectionId,
@@ -149,7 +159,7 @@ function formatAccount(account: Account): unknown {
     name: account.name,
     type: account.type,
     subtype: account.subtype,
-    balance: toDecimal(account.amountCents),
+    ...amountField,
     currency: account.currency,
     lastUpdatedAt: account.lastUpdatedAt?.toISOString() ?? null,
     credit: formatCredit(account.credit),
@@ -169,7 +179,10 @@ function formatCredit(credit: CreditDetails | null): unknown {
 }
 
 function decimalOrNull(cents: number | null): string | null {
-  return cents === null ? null : toDecimal(cents);
+  if (cents === null) {
+    return null;
+  }
+  return toDecimal(cents);
 }
 
 function isoOrNull(date: Date | null): string | null {

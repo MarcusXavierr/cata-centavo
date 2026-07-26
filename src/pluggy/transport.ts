@@ -176,9 +176,18 @@ function keyResolver(options: TransportOptions, send: Send): KeyResolver {
 
 function retryAfterMs(response: Response): number {
   const header = response.headers.get("retry-after");
-  const seconds = header === null ? Number.NaN : Number(header);
 
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : RETRY_AFTER_FALLBACK_MS;
+  let seconds: number;
+  if (header === null) {
+    seconds = Number.NaN;
+  } else {
+    seconds = Number(header);
+  }
+
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return seconds * 1000;
+  }
+  return RETRY_AFTER_FALLBACK_MS;
 }
 
 function expiryOf(token: string, now: number): number {
@@ -189,7 +198,10 @@ function expiryOf(token: string, now: number): number {
 function jwtExpiry(token: string): number | null {
   const exp = jwtPayload(token)?.["exp"];
 
-  return typeof exp === "number" ? exp * 1000 : null;
+  if (typeof exp === "number") {
+    return exp * 1000;
+  }
+  return null;
 }
 
 function jwtPayload(token: string): Record<string, unknown> | null {
@@ -200,7 +212,10 @@ function jwtPayload(token: string): Record<string, unknown> | null {
 
   try {
     const decoded: unknown = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-    return typeof decoded === "object" && decoded !== null ? (decoded as Record<string, unknown>) : null;
+    if (typeof decoded === "object" && decoded !== null) {
+      return decoded as Record<string, unknown>;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -235,7 +250,13 @@ export function slidingWindowLimiter(
         }
 
         const oldest = hits[0];
-        await sleep(oldest === undefined ? windowMs : oldest + windowMs - now);
+        let waitMs: number;
+        if (oldest === undefined) {
+          waitMs = windowMs;
+        } else {
+          waitMs = oldest + windowMs - now;
+        }
+        await sleep(waitMs);
       }
     },
   };

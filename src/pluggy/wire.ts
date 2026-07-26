@@ -67,6 +67,14 @@ export const ACCOUNT = z.object({
       balanceDueDate: z.string().nullish(),
       availableCreditLimit: z.number().nullish(),
       creditLimit: z.number().nullish(),
+      disaggregatedCreditLimits: z
+        .array(
+          z.object({
+            creditLineLimitType: z.string().nullish(),
+            customizedLimitAmount: z.number().nullish(),
+          }),
+        )
+        .nullish(),
     })
     .nullish(),
 });

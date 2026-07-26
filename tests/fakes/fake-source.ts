@@ -15,13 +15,20 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
   const connections = options.connections ?? defaults.connections;
   const accounts = options.accounts ?? defaults.accounts;
 
+  let unreachableField: Pick<FakeBankOptions, "unreachable">;
+  if (options.unreachable === undefined) {
+    unreachableField = {};
+  } else {
+    unreachableField = { unreachable: options.unreachable };
+  }
+
   return {
     ok: true,
     connections: connections.map(({ id }) => id),
     bank: fakeBank({
       connections,
       accounts,
-      ...(options.unreachable === undefined ? {} : { unreachable: options.unreachable }),
+      ...unreachableField,
     }),
     toFailure,
   };

@@ -48,6 +48,16 @@ export default tseslint.config(
         property: "stdout",
         message: "stdout is the JSON-RPC channel (ADR §4). Human-facing output goes to stderr.",
       }],
+      /**
+       * Preference, not a correctness rule: `if` reads better than a ternary
+       * in the large majority of cases here. `warn` so the rare justified
+       * ternary can stay with `// eslint-disable-line no-restricted-syntax -- reason`
+       * (enforced by `local/require-disable-reason`) instead of being banned outright.
+       */
+      "no-restricted-syntax": ["warn", {
+        selector: "ConditionalExpression",
+        message: "Prefer `if` over the ternary operator. If this is one of the legitimate exceptions, suppress with a reason instead of leaving it unexplained.",
+      }],
       "local/complexity-ceiling": "error",
       "local/require-disable-reason": "error",
     },

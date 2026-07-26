@@ -15,13 +15,13 @@ export type ToolDeps = {
   readonly log: Logger;
 };
 
-const GET_BALANCE_DESCRIPTION = `Gets consolidated balances across all configured bank connections.
+export const GET_BALANCE_DESCRIPTION = `Gets consolidated figures across all configured bank connections.
 
 Use this tool when:
-- You need cash and debt totals without combining different kinds of balance.
+- You need total money available without mixing it with what cards have taken.
 - You need to know when each connection last supplied its account data.
 
-Returns: Separate cash and owed figures, investment and loan totals when reported, plus the currency, number of accounts counted, and source update times.`;
+Returns: \`cash\`, the money available across bank accounts, and \`creditUsed\`, the limit currently taken across cards — never added together, because they are not the same unit. Investment and loan totals when reported, plus the currency, how many accounts were counted, and each source's update time.`;
 
 /** Registers the consolidated balance tool. */
 export function registerGetBalance(server: McpServer, deps: ToolDeps): void {
@@ -93,11 +93,25 @@ function mixedCurrencyMessage(currencies: readonly string[]): string {
 }
 
 function formatSummary(summary: Summary, accounts: readonly Account[]): unknown {
+  let investedField: { invested: string } | Record<string, never>;
+  if (summary.investedCents === undefined) {
+    investedField = {};
+  } else {
+    investedField = { invested: toDecimal(summary.investedCents) };
+  }
+
+  let loansField: { loans: string } | Record<string, never>;
+  if (summary.loanCents === undefined) {
+    loansField = {};
+  } else {
+    loansField = { loans: toDecimal(summary.loanCents) };
+  }
+
   return {
     cash: toDecimal(summary.cashCents),
-    owed: toDecimal(summary.owedCents),
-    ...(summary.investedCents === undefined ? {} : { invested: toDecimal(summary.investedCents) }),
-    ...(summary.loanCents === undefined ? {} : { loans: toDecimal(summary.loanCents) }),
+    creditUsed: toDecimal(summary.creditUsedCents),
+    ...investedField,
+    ...loansField,
     currency: summary.currency,
     accountsCounted: summary.accountsCounted,
     asOf: accountsAsOf(accounts),

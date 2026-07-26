@@ -102,6 +102,10 @@ No `services/`, no `utils/`, no `ports/`/`adapters/`. Tests live in `tests/`, no
 2. All four must pass before you consider a change done. CI runs typecheck → lint → deps → test → build.
 3. The devDependency list grows only by a written decision in `docs/plans/`, recording what it costs and what it buys. Dependency minimalism is a stated value of this project (ADR §5), not an accident. It currently stands at seven: `typescript`, `@types/node`, `eslint`, `typescript-eslint`, `dependency-cruiser`, and the two Stryker packages.
 
+### Style
+
+Prefer `if` over the ternary operator in the large majority of cases. A `no-restricted-syntax` rule against `ConditionalExpression` runs as a `warn` sensor in `eslint.config.js`, with a custom message — advisory, not a gate — so the rare justified ternary stays legal via `// eslint-disable-line no-restricted-syntax -- reason`, and `local/require-disable-reason` keeps that justification visible in the diff.
+
 ### Comments
 
 **Avoid comments. Write docblocks instead.** A `/** */` above an exported function, type or non-obvious constant is welcome; inline commentary explaining *what* the next three lines do is not — extract a named function. Comments that survive are the ones recording a decision the code cannot express: a runtime gotcha, an ADR reference, a "this looks wrong and here is why it isn't".

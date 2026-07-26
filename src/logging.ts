@@ -30,8 +30,20 @@ const REDACT_PATHS = [
  */
 export function createLogger(options: LoggerOptions): Logger {
   const level = options.env.CATA_CENTAVO_LOG_LEVEL ?? "info";
-  const stderrLevel = level === "debug" ? "debug" : "warn";
-  const stderr = options.write === undefined ? pino.destination({ dest: 2, sync: true }) : testDestination(options.write);
+
+  let stderrLevel: string;
+  if (level === "debug") {
+    stderrLevel = "debug";
+  } else {
+    stderrLevel = "warn";
+  }
+
+  let stderr: DestinationStream;
+  if (options.write === undefined) {
+    stderr = pino.destination({ dest: 2, sync: true });
+  } else {
+    stderr = testDestination(options.write);
+  }
   const streams: Array<{ level: string; stream: DestinationStream }> = [
     { level: stderrLevel, stream: stderr },
   ];
@@ -63,7 +75,10 @@ function fileStream(
   }
 
   const stream = createFileDestination(options.logFile);
-  return stream === null ? null : { level, stream };
+  if (stream === null) {
+    return null;
+  }
+  return { level, stream };
 }
 
 function wrap(log: PinoLogger): Logger {

@@ -60,11 +60,11 @@ describe("getBalance", () => {
       assert.equal(result.isError, true);
       assert.match(message(result), refusal.expect);
       assert.ok(!("cash" in result));
-      assert.doesNotMatch(message(result), /cash|owed|invested|loans/i);
+      assert.doesNotMatch(message(result), /cash|creditUsed|invested|loans/i);
     });
   }
 
-  it("reports cash and debt as separate figures", async () => {
+  it("reports cash and credit utilization as separate figures", async () => {
     const source = fakeSource({
       connections: [connection("conn-1")],
       accounts: {
@@ -80,7 +80,7 @@ describe("getBalance", () => {
     assert.equal(result.isError, undefined);
     assert.deepEqual(payload(result), {
       cash: "2000.00",
-      owed: "800.00",
+      creditUsed: "800.00",
       currency: "BRL",
       accountsCounted: 2,
       asOf: [{ connectionId: "conn-1", lastUpdatedAt: "2026-07-25T09:00:00.000Z" }],
@@ -89,6 +89,24 @@ describe("getBalance", () => {
     assert.ok(!("total" in resultPayload));
     assert.ok(!("invested" in resultPayload));
     assert.ok(!("loans" in resultPayload));
+  });
+
+  it("labels the card total creditUsed, not owed", async () => {
+    const source = fakeSource({
+      connections: [connection("conn-1")],
+      accounts: {
+        "conn-1": [
+          account("bank", { amountCents: 573 }),
+          account("card", { type: "CREDIT", amountCents: 9852 }),
+        ],
+      },
+    });
+
+    const result = await handleGetBalance({ source, log });
+    const summary = payload(result);
+
+    assert.equal(summary.creditUsed, "98.52");
+    assert.equal("owed" in summary, false);
   });
 
   it("counts an account holding exactly zero", async () => {
@@ -133,7 +151,7 @@ describe("getBalance", () => {
     const registration = registrations[0];
     assert.ok(registration !== undefined);
     assert.equal(registration.name, "getBalance");
-    assert.match(registration.description, /^Gets consolidated balances across all configured bank connections\.\n\nUse this tool when:/);
+    assert.match(registration.description, /^Gets consolidated figures across all configured bank connections\.\n\nUse this tool when:/);
     assert.ok((await registration.handler()) !== undefined);
   });
 });

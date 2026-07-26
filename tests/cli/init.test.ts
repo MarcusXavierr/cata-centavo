@@ -64,7 +64,10 @@ async function report(bank: FakeBankOptions, env = ONLY_A) {
 }
 
 function outcomes(result: InitReport): readonly ConnectionOutcome[] {
-  return result.kind === "checked" ? result.outcomes : [];
+  if (result.kind === "checked") {
+    return result.outcomes;
+  }
+  return [];
 }
 
 describe("runInit", () => {

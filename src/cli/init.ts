@@ -86,7 +86,10 @@ export function exitCodeFor(report: InitReport): number {
     case "credentials":
       return 1;
     case "checked":
-      return report.outcomes.every((outcome) => outcome.kind === "usable") ? 0 : 1;
+      if (report.outcomes.every((outcome) => outcome.kind === "usable")) {
+        return 0;
+      }
+      return 1;
   }
 }
 
@@ -127,9 +130,10 @@ function formatStorage(storage: StorageInfo): readonly string[] {
 }
 
 function formatOutcome(outcome: ConnectionOutcome, clock: Clock): readonly string[] {
-  return outcome.kind === "failed"
-    ? [`✗ ${outcome.id} — ${outcome.reason}`]
-    : formatUsable(outcome, clock);
+  if (outcome.kind === "failed") {
+    return [`✗ ${outcome.id} — ${outcome.reason}`];
+  }
+  return formatUsable(outcome, clock);
 }
 
 /**
@@ -144,8 +148,15 @@ function formatUsable(
   const { institution, status, lastUpdatedAt, parameter, warnings } = outcome.connection;
   const state = `${institution}, ${status}, ${describeSync(lastUpdatedAt, clock.now())}`;
 
+  let marker: string;
+  if (warnings.length > 0) {
+    marker = "!";
+  } else {
+    marker = "✓";
+  }
+
   return [
-    `${warnings.length > 0 ? "!" : "✓"} ${outcome.id} — ${state}${waitingOn(parameter)}`,
+    `${marker} ${outcome.id} — ${state}${waitingOn(parameter)}`,
     ...warnings.map((warning) => `    ${warning}`),
   ];
 }
@@ -155,7 +166,10 @@ function formatUsable(
  * other, and the bank happens to have named what it is waiting on.
  */
 function waitingOn(parameter: string | null): string {
-  return parameter === null ? "" : ` — the bank is waiting on you: ${parameter}`;
+  if (parameter === null) {
+    return "";
+  }
+  return ` — the bank is waiting on you: ${parameter}`;
 }
 
 function describeSync(lastUpdatedAt: Date | null, now: Date): string {
@@ -172,9 +186,15 @@ function describeSync(lastUpdatedAt: Date | null, now: Date): string {
   }
 
   const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `synced ${hours}h ago` : `synced ${Math.floor(hours / 24)}d ago`;
+  if (hours < 48) {
+    return `synced ${hours}h ago`;
+  }
+  return `synced ${Math.floor(hours / 24)}d ago`;
 }
 
 function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }

@@ -11,12 +11,19 @@ import type { WireAccount, WireItem } from "./wire.ts";
  * parse the raw body rather than going through the SDK's date reviver.
  */
 export function toConnection(item: WireItem): Connection {
+  let lastUpdatedAt: Date | null;
+  if (item.lastUpdatedAt === null) {
+    lastUpdatedAt = null;
+  } else {
+    lastUpdatedAt = new Date(item.lastUpdatedAt);
+  }
+
   return {
     id: item.id,
     institution: item.connector.name,
     status: item.status,
     executionStatus: item.executionStatus ?? null,
-    lastUpdatedAt: item.lastUpdatedAt === null ? null : new Date(item.lastUpdatedAt),
+    lastUpdatedAt,
     parameter: item.parameter?.label ?? null,
     warnings: toWarnings(item.statusDetail),
   };
@@ -53,7 +60,15 @@ function roundDecimalCents({ coefficient, decimalPlaces }: DecimalDigits): bigin
   const divisor = 10n ** BigInt(decimalPlaces - 2);
   const whole = coefficient / divisor;
   const remainder = coefficient % divisor;
-  return whole + (remainder * 2n >= divisor ? 1n : 0n);
+
+  let roundingUp: bigint;
+  if (remainder * 2n >= divisor) {
+    roundingUp = 1n;
+  } else {
+    roundingUp = 0n;
+  }
+
+  return whole + roundingUp;
 }
 
 /**
@@ -69,18 +84,34 @@ export function toCents(value: number): number {
     throw new RangeError("Money value must be finite");
   }
 
-  const sign = value < 0 ? -1 : 1;
+  let sign: number;
+  if (value < 0) {
+    sign = -1;
+  } else {
+    sign = 1;
+  }
+
   const roundedCents = roundDecimalCents(parseDecimalDigits(value));
   const result = sign * Number(roundedCents);
   if (!Number.isSafeInteger(result)) {
     throw new RangeError("Money value exceeds the safe integer cent range");
   }
 
-  return result === 0 ? 0 : result;
+  if (result === 0) {
+    return 0;
+  }
+  return result;
 }
 
 /** Maps Pluggy's account vocabulary and raw monetary values onto our domain. */
 export function toAccount(account: WireAccount, connection: Connection): Account {
+  let credit: CreditDetails | null;
+  if (account.type === ACCOUNT_TYPES.credit) {
+    credit = toCreditDetails(account.creditData);
+  } else {
+    credit = null;
+  }
+
   return {
     id: account.id,
     connectionId: connection.id,
@@ -91,7 +122,7 @@ export function toAccount(account: WireAccount, connection: Connection): Account
     amountCents: toCents(account.balance),
     currency: account.currencyCode,
     lastUpdatedAt: connection.lastUpdatedAt,
-    credit: account.type === ACCOUNT_TYPES.credit ? toCreditDetails(account.creditData) : null,
+    credit,
   };
 }
 
@@ -103,13 +134,25 @@ function toAccountType(type: string): Account["type"] {
   throw new ResponseShapeError(`Pluggy returned an unrecognised account type: ${type}`);
 }
 
+/**
+ * Selects the limit the cardholder actually has. Pluggy's available amount can
+ * be based on a customized limit rather than the bank's headline limit.
+ */
+function toLimitCents(creditData: NonNullable<WireAccount["creditData"]>): number | null {
+  const total = creditData.disaggregatedCreditLimits?.find(
+    (line) => line.creditLineLimitType === "LIMITE_CREDITO_TOTAL",
+  );
+
+  return toNullableCents(total?.customizedLimitAmount ?? creditData.creditLimit);
+}
+
 function toCreditDetails(creditData: WireAccount["creditData"]): CreditDetails | null {
   if (creditData === null || creditData === undefined) {
     return null;
   }
 
   return {
-    limitCents: toNullableCents(creditData.creditLimit),
+    limitCents: toLimitCents(creditData),
     availableLimitCents: toNullableCents(creditData.availableCreditLimit),
     balanceCloseDate: toDate(creditData.balanceCloseDate),
     balanceDueDate: toDate(creditData.balanceDueDate),
@@ -118,11 +161,22 @@ function toCreditDetails(creditData: WireAccount["creditData"]): CreditDetails |
 }
 
 function toNullableCents(value: number | null | undefined): number | null {
-  return value === null || value === undefined ? null : toCents(value);
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return toCents(value);
 }
 
 function toDate(value: string | null | undefined): Date | null {
-  return value === null || value === undefined ? null : new Date(value);
+  if (value === null || value === undefined || /^\d{4}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
 }
 
 /**

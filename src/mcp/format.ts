@@ -1,5 +1,10 @@
 export function toDecimal(cents: number): string {
-  const sign = cents < 0 ? "-" : "";
+  let sign: string;
+  if (cents < 0) {
+    sign = "-";
+  } else {
+    sign = "";
+  }
   const absoluteCents = Math.abs(cents);
   const whole = Math.trunc(absoluteCents / 100);
   const fraction = absoluteCents % 100;
@@ -15,7 +20,10 @@ export function prune(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.flatMap((item) => {
       const pruned = prune(item);
-      return pruned === undefined ? [] : [pruned];
+      if (pruned === undefined) {
+        return [];
+      }
+      return [pruned];
     });
   }
 
@@ -23,7 +31,10 @@ export function prune(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value).flatMap(([key, item]) => {
         const pruned = prune(item);
-        return pruned === undefined ? [] : [[key, pruned]];
+        if (pruned === undefined) {
+          return [];
+        }
+        return [[key, pruned]];
       }),
     );
   }
