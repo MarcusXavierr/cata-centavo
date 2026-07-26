@@ -9,6 +9,12 @@ The engineering decisions (§3–§11) are settled and evidence-backed. The cate
 
 **Amendment, 2026-07-26 — `manualUpdate` moves to Phase 0, because its debounce turns out to belong to Pluggy.** `init` now asks every configured connection to sync, unconditionally, and waits for it. The reason it can happen this early is that the "debounce measured in hours" of §11 needs no local state: `PATCH /items/{id}` answers **409 `CLIENT_IS_UPDATING_BEFORE_ALLOWED_FREQUENCY`** when the last sync is too recent, naming both the enforced interval and that sync's timestamp. Read the refusal as a successful *already fresh* and the whole feature needs no table, which is what unblocked it from Phase 5. Affected: §4, §11, §14.5, §14.6, §15 Phase 0 and Phase 5, §16.1, §16.2. `docs/research/pluggy-item-update.md` carries the sources and, more usefully, what the docs contradict themselves about.
 
+> **Amendment, 2026-07-26 — `manualUpdate` is removed, and the amendment above is superseded.** Connector 200 refuses `PATCH /items/{id}` unconditionally, with a bare 400 (`MeuPluggy item cant be updated`) that carries no `codeDescription` and is documented on no page Pluggy publishes. Connector 200 is the only connector this project supports, so the refresh could never have succeeded for any user. Commit `7c63f20` deleted `core/refresh.ts`, `cli/progress.ts`, `Bank.refreshConnection`, `UPDATE_RATE_LIMIT` and the second rate-limit window; `init` is read-only again. Every section the amendment above named — §11, §14.5, §14.6, §15 Phase 0, §15 Phase 5, §16.1 and §16.2 — carries its own superseding note, and §14.7's inventory drops to sixteen tools. Two things built alongside it survive, because the read path needs them: Pluggy's error envelope is parsed on every non-2xx, and the 429 backoff honours `Retry-After`. Evidence: `docs/research/pluggy-item-update.md`, §"Connector 200 refuses to be updated at all".
+
+> **Amendment, 2026-07-26 — Phase 0.5 was run against real accounts, and four of this document's premises did not survive it.** `docs/research/2026-07-26-phase-0-5-recon.md` is the capture: one wallet, three connections on connector 200, six accounts, 1751 transactions, 26 bills, 130 categories, read-only, every figure recomputed from raw response bodies rather than taken from a summary. It is one wallet, and where a finding rests on a sample of two or three it says so. Four findings change what gets built. **`GET /transactions` is gone** — 410 `ENDPOINT_DEPRECATED` on all six accounts, replaced by `GET /v2/transactions` with cursor pagination, which takes §14.2's pagination rule with it. **Enrichment is arriving** — `category` on 99.7% of rows — which makes §12 dormant rather than dead (§12.1). **The sign convention inverts between `BANK` and `CREDIT`**, so a mixed `SUM(amount)` partially cancels instead of merely meaning nothing (§14.1). **The open-bill signal is settled**, and neither §14.3 nor the prior implementation had it right (§14.3). Affected: §12.1, §12.2, §12.3, §12.4, §12.12, §14.1, §14.2, §14.3, §15 Phase 0.5 and Phase 3, and "Branches not yet walked".
+>
+> **Scope now lives in `docs/prd.md`.** What we are building, in what order, and what "done" means for each phase is that document's job as of 2026-07-26; this one keeps the engineering decisions and still wins on every engineering question. Where the two disagree about *scope*, the PRD is newer. §15's roadmap and the PRD's phase list have to be read together, and a change to one that does not reach the other is a bug in the pair.
+
 ---
 
 ## Context
@@ -291,6 +297,12 @@ Pluggy syncs with the banks daily on its own, and batch processes against the AP
 >
 > One finding worth carrying into Phase 4: for Open Finance connectors, an update does not refresh every product. Balances and recent transactions move on every update; **credit card bills, investment lists and loan instalments move once per day regardless.** Running `init` twice in an hour buys fresher balances and nothing else.
 
+> **Amendment, 2026-07-26 — the debounce has no subject, because connector 200 refuses the `PATCH` outright.** `PATCH /items/{id}` on a healthy MeuPluggy item returns 400 `MeuPluggy item cant be updated`. That is a refusal by connector capability rather than by item state, and no request we can construct gets past it. The 409 debounce described above is real and documented; we will simply never see it, because we never get to send a request that could be too soon. `manualUpdate` is deleted rather than deferred (commit `7c63f20`), and the amendment above is superseded.
+>
+> **"No sync of our own" stops being a decision and becomes a description of the API surface available to us.** The cache is still populated on demand, at read time, there is still no cron, and now there is also no alternative.
+>
+> One correction to the paragraph above, and to `pluggy-item-update.md` behind it: **auto-sync does run on connector 200.** Two of the author's three connections carry `nextAutoSyncAt` set to `lastUpdatedAt` plus exactly 24 hours, with a same-day `lastUpdatedAt`; the third has `nextAutoSyncAt: null` and a `lastUpdatedAt` three days old, while reporting `status: UPDATED`, no `error`, no `statusDetail` and no `autoSyncDisabledAt` to explain it. So the 24h cadence the docs attribute to production applications is observably running here, and a `null` `nextAutoSyncAt` is a property of one item's state rather than of the tier or the connector. Why that item is stalled, and what moves `lastUpdatedAt` at all, are both still unknown. Source: `docs/research/2026-07-26-phase-0-5-recon.md`, §"Freshness".
+
 ---
 
 ## 12. Categorization
@@ -322,6 +334,16 @@ PIX / TED / boleto → has the counterparty's documentNumber (a stable CNPJ)
 
 Matching by CNPJ is ideal and only exists off-card. On cards we are forced to match on text. The field that would solve it (`merchant.cnpj`) is exactly what Pluggy charges for. Caveat: `paymentData` has known holes (batch operations, deposits under R$ 2,000, fees, charges, withdrawals, yields, redemptions), so even off-card the document is not guaranteed.
 
+> **Amendment, 2026-07-26 — the table above is not what came back, and §12 is dormant rather than dead.** Measured across 1751 transactions from three connections on 2026-07-26: `category` and `categoryId` non-null on 1745 (99.7%), agreeing with each other on every row; `merchant` on 393 (22.4%), with `merchant.cnpj` populated on all 393, cards included; `descriptionRaw` on 96.7%. `category` is always exactly the `description` of the matching `/categories` entry. The row above saying `category` "comes back `null` — useless" describes nothing this capture saw.
+>
+> **This does not refute §12.1, because the capture is not from the free tier.** The account is very likely on a trial or paid plan, and the honest statement of what was measured is that **the free-tier claim was never tested — there was nothing free-tier to test it against.** What these numbers describe is the shape of a tier that includes enrichment. Which fields are gated when it ends, and whether `payeeMCC` and `paymentData` — which come from the card network and the payment rails rather than from Pluggy's enrichment — are gated with them, is a question for Pluggy's support and not something these captures can answer.
+>
+> So the override → counterparty → MCC derivation below is **the contingency for the day enrichment goes away**, not surplus to a product that already has categories. While enrichment arrives it is a correction layer over a mostly-correct default; if it stops, it is the only source. Nothing in §12's design changes — only its urgency, and the order in which it gets built.
+>
+> **What is tier-independent and now settled:** `GET /categories` is a public reference endpoint serving 130 bilingual entries, and it is the obvious home for §12.4's closed list. See the amendment there.
+>
+> The asymmetry this section is built on is confirmed, and sharper than the prose implies: `creditCardMetadata.payeeMCC` on 1126 of 1270 card rows (88.7%, 87 distinct codes) and 0 of 481 bank rows; `paymentData.receiver.documentNumber` on 366 of 481 bank rows (76.1%) and 0 of 1270 card rows. On cards `paymentData` is not "usually absent", it is absent on 99.2% of rows. Neither signal reaches the other half of the wallet, which is exactly §12.2's argument for keeping `setCounterpartyCategory` in V1.
+
 ### 12.2 Model and scope split
 
 | Source | Scope | Where it lives | Release |
@@ -344,6 +366,16 @@ An override always beats a rule. Among rules, the **most specific** wins — mea
 There is no hardcoded precedence ladder (`document > description > MCC`). **Criterion counting does not reproduce such a ladder, and does not try to.** Two single-criterion rules — `{document: X} → market` and `{mcc: 5814} → restaurant` — both score 1 against a PIX transaction carrying both, so the winner is whichever was written last. A ladder would say document always wins. The two schemes agree only when the criterion counts differ. We accept the recency tiebreak as *deterministic rather than correct* (§12.7) instead of encoding a ladder, because a ladder asserts a global truth about criterion quality that our data does not support: `document` is stronger than `mcc` for a known CNPJ, and useless for the batch operations where `paymentData` is empty (§12.1).
 
 Rules carry three nullable criteria evaluated with `AND`. The concrete motivator: `DEIVYN LANCHES` (delivery) and `DEIVYN PNEUS` (tyre shop) coexist. Matching on description alone cannot tell them apart; description **and** MCC can.
+
+> **Amendment, 2026-07-26 — the MCC map exists, and the failure this section feared is not in the data.**
+>
+> **The map is built, in `src/core/mcc.ts`.** 87 MCC codes mapped to the top-level categories of §12.4's amendment, derived rather than hand-written: every card transaction carrying both an MCC and a category — 1123 of them — was grouped by MCC, each observed category rolled up to its top-level ancestor, and the most frequent ancestor won. 78 of the 87 rows are unanimous; the weakest is 12 of 25. Sample size and agreeing count are carried per row, because a 12-of-25 plurality and a 192-of-192 sweep are not the same fact. **The provenance limit is the part to state honestly:** one wallet, three institutions, 87 of roughly a thousand ISO 18245 codes. That is what §12.4 step 3 asked for — cover "the codes that actually show up in real statements" — and it is not coverage of the code space. A code nobody in this wallet spent at has no row and falls through to `none`.
+>
+> **The `{type: "", value: ""}` collapse is not in Pluggy's payload.** Across 1751 transactions: 366 documents present (278 CPF, 88 CNPJ), 70 rows with `receiver` explicitly `null`, 1315 with `paymentData` explicitly `null`, and **zero** empty-stringed document objects. When the counterparty is unknown, `receiver` is `null` and `documentNumber` does not exist below it. The collapse was a property of the prior implementation's value types, not of the API. **The `NULL`-not-`''` requirement stands unchanged** — it is a rule about our own deserialization discipline, and it now rests on its own merits rather than on a defence against a payload that never sends `''`.
+>
+> One requirement gets stricter rather than weaker. **All 366 document values carry Brazilian punctuation**, so §12.6's "digits only, punctuation stripped on write" is mandatory rather than hygiene: a raw value used as a join key would never match a user-supplied one. Type and length agree on every row — 11 digits on all 278 CPFs, 14 on all 88 CNPJs.
+>
+> Source: `docs/research/2026-07-26-phase-0-5-recon.md`, §"Step 7 — `paymentData`".
 
 ### 12.3 Deriving instead of storing
 
@@ -393,6 +425,8 @@ Verified behaviour of the ranked V2 form: `DEIVYN LANCHES`/5814 → delivery and
 
 `category_src` is not a column, but tool responses must expose it as a computed value so the agent can explain its reasoning. V1 emits `"override"`, `"counterparty"`, `"mcc"` or `"none"`; V2 adds `"rule:12"`.
 
+> **Amendment, 2026-07-26 — the `mcc_categories` seed has a source, and it carries its own evidence.** Both queries above are unchanged; what changes is what the table is seeded from. `src/core/mcc.ts` is the map (§12.2's amendment), and each row there carries `samples` and `agreeing` beside the category, so the seed migration should carry them too. That costs two integer columns and buys two things the query cannot otherwise say: `doctor` can surface a coin-flip mapping as one, and `category_src: "mcc"` can be explained with a number attached rather than only with a source name.
+
 ### 12.4 Taxonomy is the blocking decision
 
 **The MCC table has to be populated before anything works** — seeing MCC `5814` and returning a category presupposes that a target category exists. That makes taxonomy the *first* implementation decision, not a finishing detail.
@@ -406,6 +440,15 @@ To do at implementation time:
 3. Only then map MCC → category, covering the codes that actually show up in real statements. All 1000 are not needed up front.
 
 The category becomes a union type / `z.enum` in `core/category.ts`, and tool validation rejects anything outside the list.
+
+> **Amendment, 2026-07-26 — decided: Pluggy's 22 top-level categories.** `GET /categories` returns 130 entries, bilingual (`description` / `descriptionTranslated`, the latter populated on all 130), and every one of the 56 `categoryId`s observed in real data exists in it, with zero orphans. We adopt the **22 top-level entries** as the closed list and roll every child up into its ancestor. That answers step 2 without the research it asks for: this is a taxonomy already validated in production, it is the one the data is already labelled with, and adopting its ids means our categories and Pluggy's line up on any tier. `src/core/category.ts` holds them as a `const` object plus a derived union (§13's pattern), with Pluggy's id as the value rather than the key.
+>
+> **Two constraints the implementation has to respect, both from the data rather than from taste.**
+>
+> - **The roll-up is transitive.** The tree is three levels deep in places — Services → Education → University, Housing → Utilities → Electricity, Transportation → Automotive → Gas stations — with 22 entries at depth 1, 81 at depth 2 and 27 at depth 3. Code that walks one level up loses the leaves. It matters because parents are used as categories in their own right alongside their own children: Transfers carries 143 rows directly against 111 across its ten children, Services 101 against 24. A group-by that does not roll up scatters one concept across a parent and its descendants. Build the tree from `parentId`, and note that three entries under Loans and financing carry a `parentDescription` disagreeing with their own `parentId` — `parentId` is the field to trust, and they sit misfiled at the source.
+> - **Never slice the id.** 126 ids are 8 characters; the four Insurance children (`200100000` … `200400000`) are 9, while their parent `20000000` is 8. A "first four characters, zero-padded" rule produces `20010000`, which is not a category. All 22 **top-level** ids are themselves 8 digits, which is why the closed list is uniform even though the tree beneath it is not — and why the temptation to derive a parent positionally survives long enough to reach production.
+>
+> Step 3 is done as well, empirically and ahead of this section's ordering: see §12.2's amendment for the 87-code MCC map. Source: `docs/research/2026-07-26-phase-0-5-recon.md`, §"The category taxonomy".
 
 ### 12.5 Description normalization
 
@@ -484,10 +527,12 @@ With SQLite `:memory:` in `tests/storage/`: the canonical query with two `ATTACH
 
 ### 12.12 Open points
 
-1. **Which N categories.** Blocks V1. Research Pierre and Brazilian apps before deciding (§12.4).
-2. **Which MCCs to map**, and to what. Entirely dependent on (1).
-3. Should `descriptionRaw` feed normalization when `description` is poor? Only decidable against real data.
+1. ~~**Which N categories.** Blocks V1. Research Pierre and Brazilian apps before deciding (§12.4).~~ **Closed 2026-07-26** — Pluggy's 22 top-level categories, taken from `GET /categories` (§12.4's amendment).
+2. ~~**Which MCCs to map**, and to what. Entirely dependent on (1).~~ **Closed 2026-07-26** — 87 codes, derived from the card transactions that carried both an MCC and a category rather than chosen (§12.2's amendment).
+3. ~~Should `descriptionRaw` feed normalization when `description` is poor?~~ **Closed 2026-07-26** — Phase 2 normalizes Pluggy's `description` field. `descriptionRaw` is not part of the domain row or the tool response; one description source keeps normalization deterministic.
 4. `doctor` detecting ambiguity: presumably alongside V2.
+
+> **Amendment, 2026-07-26 — points 1 and 2 are closed, and neither was decided the way this list expected.** The taxonomy was not researched and invented, it was adopted from the endpoint that already labels our data; the MCC map was not written from ISO 18245 downwards, it was derived from real card rows upwards. Point 3 is now decidable in principle — `descriptionRaw` is populated on 96.7% of rows — and point 4 still waits on V2.
 
 ---
 
@@ -500,7 +545,7 @@ With SQLite `:memory:` in `tests/storage/`: the canonical query with two `ATTACH
 
 ## 14. Complete tool inventory
 
-Seventeen MCP tools plus three CLI commands. Fourteen tools ship in V1; three are V2.
+Sixteen MCP tools plus three CLI commands. Thirteen tools ship in V1; three are V2. (Seventeen and fourteen until `manualUpdate` was removed on 2026-07-26 — §14.5 and §14.7.)
 
 ### 14.0 Naming and description conventions
 
@@ -539,10 +584,25 @@ Excluding `LOAN` follows the same logic (a debt is not money you have). Excludin
 **`getBalanceByAccount(accountId)`** — V1 · effort: trivial
 `GET /accounts/{id}`. Direct passthrough with our field mapping.
 
+> **Amendment, 2026-07-26 — the Phase 1 probe confirms both supplementary account endpoints, and unknown account types are rejected.** `GET /investments?itemId=` returned 200 for all three configured connections: two returned 21 positions and one returned none. `GET /loans?itemId=` also returned 200 for all three, with no loans observed. Phase 1 therefore reads both endpoints with `/accounts`, maps their results to `INVESTMENT` and `LOAN`, and omits the corresponding aggregate figure only when no account of that type exists. An account `type` outside the recognized wire values is a parse failure, never a default that silently changes its meaning. Evidence: `docs/research/2026-07-26-phase-1-probe.md`; the Phase 1 handling is specified in `docs/plans/2026-07-26-phase-1-accounts-and-balances-design.md`.
+
+> **Amendment, 2026-07-26 — a pitfall worse than pitfall #1: the sign convention inverts between account types.** Measured across all 1751 transactions, without exception, and no row has `amount === 0`:
+>
+> | Account type | `type: DEBIT` | `type: CREDIT` |
+> |---|---|---|
+> | `BANK` | 305 rows, `amount` **negative** | 176 rows, `amount` **positive** |
+> | `CREDIT` | 1210 rows, `amount` **positive** | 60 rows, `amount` **negative** |
+>
+> On a checking account money leaving is negative. On a credit card a purchase — money that will leave — is **positive**, and a payment or refund is negative. Pitfall #1 above forbids summing `BANK` and `CREDIT` because the units differ, and that argument stands untouched. This one is sharper: a mixed `SUM(amount)` does not return a meaningless number, it **partially cancels** and returns a plausible one. "You spent R$ X this month" computed across a checking account and a card lands below either half, with nothing anywhere reporting a problem. The normalization belongs in `pluggy/mapper.ts`, at the point where a Pluggy transaction becomes ours, and `type` (`DEBIT` / `CREDIT`) is what makes it decidable — present and non-null on all 1751 rows.
+>
+> **A second reading rule of the same class: `amountInAccountCurrency ?? amount`.** Three currencies appear — BRL 1718, USD 32, CLP 1 — and all 33 foreign rows are ordinary international card purchases, not a data fault. `amountInAccountCurrency` is non-null on exactly those 33 rows and null on all 1718 BRL rows, so Pluggy has already done the conversion and parks it precisely where `amount` is not in the account's currency. Summing `amount` naively adds dollars to reais, with 33 rows vanishing into a BRL total unsignalled. Currency *conversion* is scoped out of V1 by `docs/prd.md`; this reading rule is not, because nothing needs converting — the conversion is already done and the only way to get it wrong is to ignore the field. What stays open is presentation, whether the original amount and currency travel alongside the converted one, and whether the field behaves the same on a non-BRL account, which this wallet cannot answer.
+
 ### 14.2 Read tools — transactions
 
 **`getTransactions({ startDate, endDate, categories?, minAmount?, maxAmount?, accountType?, accountSubtype? })`** — V1 · effort: medium
 The core of the project. Pluggy's endpoint **requires `accountId`** — it does not accept an `itemId`, and it filters by neither category nor amount. So the flow is: resolve accounts → paginate each one → merge → filter locally. Category filtering works in V1 despite categories being derived, because the derivation happens in the same SQL query (§12.3).
+
+Phase 2 uses `/v2/transactions` and applies `startDate`, `endDate`, category, account and signed cent filters from the cache. `minAmountCents` and `maxAmountCents` are bounds on the normalized signed amount. Groups roll up to the 22 top-level categories. Transfers between the user's own accounts and credit-card bill payments remain visible in `groups`, but their leaf ids are excluded from `spent` and `received`.
 
 **Pagination has no prior art and must be built from scratch.** §16 found that the prior implementation never paginates *anything*: it decodes `totalPages` and never reads it, forwarding a single page and leaving the model to ask for more. Two endpoints send no pagination parameters at all and therefore silently receive Pluggy's default of 20 rows. The concrete rule for us:
 
@@ -551,6 +611,19 @@ The core of the project. Pluggy's endpoint **requires `accountId`** — it does 
 - **Never expose Pluggy's pagination envelope to the model.** The prior implementation applies local filters, rewrites `total`, leaves `totalPages` stale, and hands the model `{total: 4, totalPages: 3}` — a self-contradictory object that something is expected to reason about. Our tools return our shape (§14.0); paging that the model drives is `listTransactions`' explicit cursor, nothing else.
 
 This is the highest-cost silent failure available to this project: nothing errors, aggregates are simply computed over a fraction of the data.
+
+> **Amendment, 2026-07-26 — `GET /transactions` is gone, and the rule above cannot be followed.** All six accounts answer with the same body: 410, `codeDescription: ENDPOINT_DEPRECATED`, *"This endpoint is deprecated. Use GET /v2/transactions with cursor pagination instead."* Not a 404, and not a deprecation header on a working response. There is no fallback.
+>
+> The v2 envelope is two keys, `{ results, next }`. **No `total`, no `totalPages`, no `page`.** `pageSize`, `limit`, `page`, `perPage`, `first`, `from`, `to` and `itemId` are each rejected with a 400 naming the offending parameter (`property pageSize should not exist`); `accountId` is required and is the only parameter accepted alongside `after`. **The server picks the page size** — 500 observed on a full page, 53 on a tail, 3 on an account holding 3. **`next` is a relative query string, not a URL**: it begins with `?`, carries no host and no path, and the correct join is `${BASE}/v2/transactions${next}`. There is also no server-side date filter, so `getTransactions`' `startDate` / `endDate` is applied by us after fetching, or served from the cache.
+>
+> **Say it plainly: the invariant is gone, not relocated to a different field.** "Terminate on the reported total, not on a short page, and assert it" has nothing left to assert against, and a short page now carries no information at all — the 53-row tail and the 3-row single page are the same shape. What replaces it, for `/v2/transactions` only:
+>
+> - **Terminate on `next === null`, and on nothing else.**
+> - **Cap the hop count and fail loudly on the cap**, because "loop until the server says stop" has no natural bound if the cursor stops advancing.
+> - **Assert the cursor advances.** Two consecutive responses carrying the same `after`, or a page returning rows already seen, is an error. This is the closest survivor of the old assertion and it is strictly weaker: it catches a loop that sticks, not a fetch that stops early.
+> - The old rule applies unchanged to `/accounts`, `/bills` and `/categories`, which are still offset-paginated and still return `{total, totalPages, page, results}`.
+>
+> **This section's own named failure mode was reproduced by accident during the capture that found the deprecation.** The first pass of the fetch script joined `next` as though it were a path, requested something that was not the next page, and stopped: 500 rows from an account holding 1053, no error, a plausible-looking result. "Nothing errors, aggregates are simply computed over a fraction of the data" — written above as a warning, and hit within the first hour of contact with the new endpoint by the people who wrote it.
 
 **Deliberate divergence from Pierre:** Pierre offers `format: 'raw' | 'structured'`. We do not copy that. A model handed the choice picks `raw` and blows its own context. This tool returns **aggregates by default**, and detail is reached through explicitly bounded paths.
 
@@ -568,12 +641,20 @@ Explicit paging when the agent needs the full set rather than a sample — bulk 
 The rule is therefore "**aggregated by default, explicit paging with a hard ceiling**", not "aggregated only". The ceiling is the safeguard; the aggregate default is the nudge.
 
 **`getTransactionDetails(ids: string[])`** — V1 · effort: low
-Full rows, including `paymentData` and card metadata, for an explicit, bounded set of ids. Distinct from `listTransactions` in that it takes ids the agent already chose rather than a filter.
+Full domain rows for an explicit set of at most 20 ids. Money crosses the MCP boundary as decimal strings. The response exposes our names for counterparty, payment, instalment, purchase, MCC and bill fields; it does not return Pluggy's `paymentData` or `creditCardMetadata` blobs.
+
+> **Amendment, 2026-07-26 — Phase 2 is implemented.** `getTransactions` groups by the 22 top-level category ids, accepts signed cent filters, and excludes the transfer leaves `04000000` and `05100000` from the headline totals. `listTransactions` is cursor-paged with a hard limit of 100. `getTransactionDetails` is capped at 20 ids and returns the normalized domain shape.
 
 **`getInstallments()`** — V1 · effort: **high** · implement last
 There is no "installment purchase" entity in Pluggy. It is reconstructed from card metadata: `installmentNumber`, `totalInstallments`, `totalAmount` (the sum of all installments), `payeeMCC`, `cardNumber`, `billId`. Group by `description|totalAmount|totalInstallments`, take the max `installmentNumber` as paid, and derive what remains.
 
 Behaviour varies by institution: some post every installment right after the purchase, others one per bill. Do not generalize from a single bank. This is why it is last on the roadmap — it needs real data from *your* banks in hand.
+
+> **Amendment, 2026-07-26 — the grouping recipe names a field that does not exist.** `creditCardMetadata` carries no `totalAmount` key on any of 1270 card rows. Its members are `billId`, `installmentNumber`, `totalInstallments`, `cardNumber`, `payeeMCC`, `billForecastDate`, `purchaseDate`, `feeType`, `feeTypeAdditionalInfo`, `otherCreditsType` and `otherCreditsAdditionalInfo`. **Group by `description | totalInstallments | purchaseDate`.**
+>
+> Substituting the row's own `amount` for the missing `totalAmount` is not a safe fallback — it fabricates groups. On the author's card B it yields 55 groups where `purchaseDate` yields 56, by merging two unrelated purchases that happen to share a description, an amount and an instalment count into a single group of twelve rows, which then reads as "a 12× purchase posted all at once". `purchaseDate` is present on 120 of the 122 instalment rows in the wallet, absent only on the two belonging to the partial connection.
+>
+> **"Do not generalize from a single bank" is confirmed inside a single wallet.** Card C posts strictly one instalment per bill, 18 times out of 18. Card B posts several at once on 37 of its 56 instalment purchases, up to five rows for one purchase. `totalInstallments` values seen: 2, 3, 5, 10, 12. Nothing here reaches the 45×-instead-of-9× case §14.3 warns about, but the direction of the error is confirmed and the guard is needed. Source: `docs/research/2026-07-26-phase-0-5-recon.md`, §"Step 6".
 
 ### 14.3 Read tools — credit cards
 
@@ -589,6 +670,23 @@ Two further constraints inherited from §16's analysis of the prior implementati
 
 - **Do not exclude transactions that lack `creditCardMetadata`.** The prior version skips them, which drops card payments, annuity fees, interest and IOF from the itemization while leaving them inside `account.balance` — so its headline figure and its line items are computed over different populations.
 - **Guard the installment deduction against banks that post all installments upfront.** Deducting `amount × (totalInstallments − installmentNumber)` per row assumes one row per bill. On a bank that posts all ten rows of a 10× purchase at once, that deducts 45× the installment instead of 9×. §14.2 already records that posting behaviour varies by institution; this is where it does damage.
+
+> **Amendment, 2026-07-26 — the open-bill signal is resolved, and neither of the two candidates was right.** Cross-tabulated over 1270 card transactions:
+>
+> | `status` | `billId` present | `billId` key absent |
+> |---|---:|---:|
+> | `POSTED` | 1196 | 0 |
+> | `PENDING` | 2 | 72 |
+>
+> **`billId` is never an empty string.** When it is absent the key is omitted from the object entirely — not `null`, not `""`. The prior implementation's `billId == ""` test would have matched zero rows out of 1270 and reported an empty open bill on every card. **The `PENDING` / `POSTED` split is close but has two real exceptions:** `POSTED ⇒ billId present` holds 1196 out of 1196, while two `PENDING` rows carry a `billId`, and both resolve to bills `/bills` actually returns. The two signals agree on 1268 of 1270 rows — exactly the confidence profile that lets a wrong choice survive testing and fail in production. Both exceptions sit on the three-transaction card, a sample too small to say whether it is an institution quirk or a state a fuller card also passes through.
+>
+> **What the data supports:** treat `billId != null` as "belongs to bill X", because it names a bill that exists, and `status === "POSTED"` as corroboration rather than as the key. `status === "PENDING"` and a missing `billId` both mean "not yet on a closed bill"; where they disagree, the `billId` is the stronger claim. The join is clean in both directions — 26 bills fetched, 26 distinct `billId`s on transactions, no orphan on either side.
+>
+> **Every credit transaction carries `creditCardMetadata`** — 1270 of 1270, against 0 of 481 bank rows. The bullet above costs nothing to honour on this wallet because there is nothing to exclude: the fee and credit rows it is about are present and do carry the object (`feeType` on 225 rows, `otherCreditsType` on 213), arriving with a `billId` and without a `payeeMCC`.
+>
+> **Absence is signalled two different ways depending on nesting depth, and that decides how the Zod schemas in `pluggy/wire.ts` are written.** Top-level transaction fields are always present and explicitly `null` — all 23 keys on all 1751 rows, no key ever omitted and no value ever `""`. Fields nested inside `creditCardMetadata` are **omitted entirely** when absent, with zero explicit nulls (`billId` absent on 72, `purchaseDate` on 1150, `payeeMCC` on 144). The same holds one level further down: `paymentData.receiver` is explicitly `null`, but `receiver.documentNumber` either exists or its key does not. So `.nullable()` at the top level and `.optional()` on nested members, and the two are not interchangeable — which is also where `exactOptionalPropertyTypes` earns its place.
+>
+> One confirmation for the tool below: **`creditData.balanceCloseDate` is `null` on all three cards.** Pitfall #6 is not hypothetical on this connector, and `manageClosingDate` is the only source of a closing day. `billClosingDate` *is* populated on the 24 bills of the two full cards, so the date exists per bill even where it is missing from the account.
 
 **`manageClosingDate({ operation, accountId?, day? })`** — V1 · effort: low
 Purely local CRUD over `data.db.card_closing_day`, with `LIST`, `GET`, `INSERT`, `UPDATE`, `DELETE`. It exists because `balanceCloseDate` is not populated on every connector (pitfall #6), and `getBillSummary` needs a fallback.
@@ -618,6 +716,10 @@ Specified in §12.6. The agent may create rules unaided because nothing is destr
 > - **20/min needs its own window.** The general limit is 360/min, so one shared limiter lets a fan-out of reads spend a budget the updates need. `transport` now claims a second window for `PATCH /items/`, in the same choke point and for the same §16.2 reason.
 > - **`WAITING_USER_INPUT` is a first-class outcome, not an error.** The item carries the label of what the bank wants — "Chave de segurança" — and reporting that label is the difference between an actionable message and a shrug. Answering it (`POST /items/{id}/mfa`) is deliberately not built: `init` is non-interactive per §14.6, and a `LOGIN_ERROR` cannot be fixed from the API at all, only through Pluggy Connect.
 
+> **Amendment, 2026-07-26 — `manualUpdate` is deleted, and the amendment above with it.** Connector 200 refuses `PATCH /items/{id}` unconditionally (§11's amendment), so the tool could not have worked for any user of this project — connector 200 is the only one it supports. Commit `7c63f20` removed `core/refresh.ts`, `cli/progress.ts`, `Bank.refreshConnection`, `UPDATE_RATE_LIMIT` and the second rate-limit window, together with their tests. This is a deletion, not a deferral: nothing is waiting behind a flag, and the tool is off §14.7's inventory. The three corrections recorded above were all correct and are all moot.
+>
+> **Two things survive it.** The read path kept the **error-envelope parsing** and the **429 backoff** built alongside the refresh, because both are about talking to Pluggy at all rather than about updating an item. And `Connection.parameter` and `Connection.warnings` survive, because a `GET /items/{id}` still carries them: an item can sit in `WAITING_USER_INPUT` with a labelled parameter, or come back `PARTIAL_SUCCESS` with warnings naming a product that hit its quota, whether or not we were the ones who asked it to sync. Reporting the label of what the bank wants is still the difference between an actionable message and a shrug — that part was never about the `PATCH`.
+
 **`listSources()`** — V1 · effort: trivial · not in Pierre
 Returns the configured `itemId`s with institution, last sync, item `status` / `executionStatus`, and consent state. Given §2, this is the closest thing to an item listing that can exist.
 
@@ -643,6 +745,10 @@ It **mitigates pitfall #7** (revoked consent returns empty data, not an error) o
 >
 > Waiting silently for minutes is not acceptable, so `init` draws a live region on stderr: a spinner and the current stage per connection on a terminal, one plain line per stage change anywhere else. Stdout stays empty either way (§4).
 
+> **Amendment, 2026-07-26 — `init` is read-only again, in both senses, and the amendment above is superseded.** It does not write to our disk and it no longer writes to Pluggy: one `GET /items/{id}` per configured id, issued in parallel, reported per id on stderr. The `PATCH` the previous amendment was built around is refused by connector 200 (§11), so "it does not write" is true without the qualification that amendment added.
+>
+> **The five outcomes collapse back to two — usable and failed.** *Already fresh*, *waiting on you* and *still syncing* were all states of a sync we now never trigger. The live stderr region, the spinner and the per-connection stage table went with the poll loop (`cli/progress.ts`, deleted in `7c63f20`), because there is no longer a wait to narrate: three parallel `GET`s finish in the time it takes to print them. What the 2026-07-25 amendment said therefore holds again, unchanged: one id failing does not abort the others, and the exit code carries the failure. Storage is still prepared before the network, so a `data.db` this release cannot read is reported without spending a round of API calls first.
+
 **`doctor`** — diagnostics over every configured item: `status`, `executionStatus`, `statusDetail`, `lastUpdatedAt`, `consecutiveFailedLoginAttempts`, consent `expiresAt` / `revokedAt`, plus cache freshness and schema versions. In V2 it also reports rule ambiguity (§12.7).
 
 **(default, no argument)** — the MCP server over stdio.
@@ -654,7 +760,7 @@ It **mitigates pitfall #7** (revoked consent returns empty data, not an error) o
 | `getAccounts` | V1 | `/accounts` + `/investments` + `/loans` per item | medium |
 | `getBalance` | V1 | derived from `/accounts` | trivial |
 | `getBalanceByAccount` | V1 | `GET /accounts/{id}` | trivial |
-| `getTransactions` | V1 | `GET /transactions` + local filtering | medium |
+| `getTransactions` | V1 | `/v2/transactions` cursor walk + cache | medium |
 | `listTransactions` | V1 | cache, paged, `limit <= 100` | low |
 | `getTransactionDetails` | V1 | cache | low |
 | `getBills` | V1 | `GET /bills?accountId=` | low |
@@ -663,7 +769,7 @@ It **mitigates pitfall #7** (revoked consent returns empty data, not an error) o
 | `manageClosingDate` | V1 | local state only | low |
 | `setCategory` | V1 | local state only | low |
 | `setCounterpartyCategory` | V1 | local state only | low |
-| `manualUpdate` | V1 | `PATCH /items/{id}` + poll | low |
+| ~~`manualUpdate`~~ | — | **removed 2026-07-26** — connector 200 refuses `PATCH /items/{id}` (§14.5) | — |
 | `listSources` | V1 | local + item/consent status | trivial |
 | `addRule` | V2 | local state only | medium |
 | `listRules` | V2 | local state only | low |
@@ -713,6 +819,10 @@ Config format and its versioning, XDG path resolution, `parseArgs` dispatch, bot
 >
 > What remains for Phase 0.5 step 4 is unchanged, with one addition: the 20/min figure for updates is documented plainly and needs no confirming, but whether the general limit is per minute or per hour still does.
 
+> **Amendment, 2026-07-26 — the phase loses `manualUpdate` again, and one of the two `send()` items goes with it.** The refresh is deleted rather than returned to Phase 5 (§14.5). The **second rate-limit window** for `PATCH /items/` goes with it: one window again, 360/min, which is §16.2's rule with nothing left to qualify it. The **429 backoff** stays, because any endpoint can answer 429, and so does the error-body parsing added in the same amendment, which is the more valuable of the two — §14.2's `ENDPOINT_DEPRECATED` is a 410 whose body names its own replacement, and a client that threw the status code alone would have reported "Pluggy returned 410" and left someone to guess. Pagination is still unbuilt and is now cursor-shaped rather than offset-shaped (§14.2's amendment).
+>
+> Phase 0.5 step 4 is unchanged and still open: whether the general limit is per minute or per hour. The 20/min figure stops mattering, since we never send an update.
+
 ### Phase 0.5 — Reconnaissance before writing feature code
 
 Before any tool exists, hit the API by hand and confirm, against **your** banks:
@@ -736,11 +846,29 @@ Capture the raw JSON as test fixtures. Pluggy's Discord is the support channel f
 
 *Answers:* what the data actually looks like, which is the input to every later estimate — and, via (1) and (2), whether §12 and Phase 1 are built on solid ground.
 
+> **Amendment, 2026-07-26 — run, and five of the seven are answered.** `docs/research/2026-07-26-phase-0-5-recon.md` is the capture: three connections, six accounts, 1751 transactions, 26 bills, 130 categories, read-only, recomputed from raw bodies. Note before anything else that **the two `curl` lines above no longer work** — `GET /transactions` answers 410 on every account (§14.2's amendment), and the working form is `GET /v2/transactions?accountId=`.
+>
+> | Step | Status |
+> |---|---|
+> | 1 — transaction id stability across a re-sync | **open**, and it costs more to answer now (below) |
+> | 2 — regulated or Direct connector | closed by `docs/research/pluggy-item-update.md`: **neither.** Connector 200 is Pluggy's own aggregator — `isOpenFinance: false`, no credentials, `oauth: true` against `meu.pluggy.ai`, with the real Open Finance connection one level down where we cannot see it |
+> | 3 — the open-bill signal | closed — §14.3's amendment |
+> | 4 — 360 per minute or per hour | **open.** Nothing was measured against it: the capture paced itself at 200ms and never came close to either bound, and no `RateLimit-*` or `Retry-After` header appears on a successful response, so a 429 has to be provoked to read the answer |
+> | 5 — do `category` and `merchant` come back null | closed — §12.1's amendment. On this tier they do not, and the free-tier claim was never testable |
+> | 6 — does `item.connector` show the institution | closed by `pluggy-item-update.md`: it is `"MeuPluggy"`, never the bank, so `source` has to come from the accounts |
+> | 7 — does `paymentData` carry the counterparty | closed — §12.2's amendment. 76.1% of bank rows, 0% of card rows, and never empty-stringed |
+>
+> **Step 1 now needs a human in the loop.** The plan was fetch → `manualUpdate` → fetch → diff. `PATCH /items/{id}` is refused by connector 200, so the forced sync is unavailable from the API at all, and answering this requires a **manual refresh inside meu.pluggy.ai between two captures**. Until that is run, `category_overrides` keyed on `transaction_id` rests on an assumption — which is the same standing this section gave it, at a higher price. All 1751 ids are distinct and UUIDv4-shaped; that is a precondition, not an answer, since a server-generated id can be stable or re-issued and the shape does not say which.
+>
+> The run also answered questions nobody had put on this checklist, which is the argument for the phase existing: the deprecation of `GET /transactions` (§14.2), the sign inversion (§14.1), the absence convention that decides how `wire.ts` is written (§14.3), and the taxonomy (§12.4). It left open items of its own, listed in the research document's last section — chief among them which enrichment fields disappear when this account lands on the free tier.
+
 ### Phase 1 — Accounts and balances
 
 `getAccounts`, `getBalance`, `getBalanceByAccount`. The lazy cache path in `storage/`, plus the `Clock` port and the 7-day freshness rule — freshness only matters for the last 7 days, since regulated Open Finance connectors update within a 7-calendar-day window including today, and anything older is immutable in practice and must not be revalidated.
 
 *Delivers:* the account map. *Answers:* is the credential/item/account chain sound.
+
+> **Amendment, 2026-07-26 — Phase 1 has no lazy cache path or 7-day freshness rule.** Connector 200 reports `isOpenFinance: false`; `PATCH /items/{id}` is refused; and one connection was stalled for three days with no diagnosable cause. Phase 1 reads accounts directly from Pluggy and reports freshness per connection through `lastUpdatedAt`; it does not control or gate on freshness. Evidence: `docs/research/2026-07-26-phase-0-5-recon.md`, `docs/research/2026-07-26-phase-1-probe.md`. The decision rationale is in `docs/plans/2026-07-26-phase-1-accounts-and-balances-design.md`.
 
 ### Phase 2 — Transactions
 
@@ -765,6 +893,12 @@ Ships `setCategory`, `setCounterpartyCategory`, the `mcc_categories` seed table,
 
 *Delivers:* usable categories across the whole wallet — MCC on cards, counterparty off cards. *Answers:* **what fraction is still uncategorized after override, counterparty and MCC.** That residue is by construction the description-matching gap, and its size is the number that decides whether V2 rules are urgent or optional. Measure it per account type, since cards and checking accounts fail for different reasons.
 
+> **Amendment, 2026-07-26 — this phase's headline answer was measured before the phase started: 14.8%.** 259 of 1751 transactions carry neither an MCC nor a counterparty document, so they are precisely what override, counterparty and MCC cannot reach and description text is the only signal left on them. Per account type, as this section asks for: cards carry an MCC on 88.7% of rows and a document on none of them; checking accounts carry a document on 76.1% and an MCC on none. The two halves fail for different reasons and neither mechanism reaches the other's. (The 14.8% is a ceiling on automatic coverage from signal availability, not a count of rows a user would call wrong — an MCC that resolves to the wrong category is still a row someone has to correct.)
+>
+> So **V2's necessity is now a judgement about one number rather than an unknown.** "Is 14.8% uncategorized tolerable?" belongs to the product, and `docs/prd.md` carries it as an open decision; answering yes is what keeps the rules engine from ever existing.
+>
+> The other half of this phase moved too. The category list is fixed (§12.4's amendment) and the MCC map is built (§12.2's amendment), both ahead of the ordering this section describes, because the recon produced the data they were waiting on. What is left here is the seeding, `setCategory`, `setCounterpartyCategory` and the `COALESCE` query — a smaller phase than this section plans for.
+
 ### Phase 4 — Credit cards
 
 `getBills`, `getBillSummary`, `manageClosingDate`. Settle the `operation`-enum question from §14.3 first.
@@ -774,6 +908,8 @@ Ships `setCategory`, `setCounterpartyCategory`, the `mcc_categories` seed table,
 `manualUpdate` with its hours-long debounce, and `listSources`. Pitfall #7 becomes an explicit error here: empty response → check consent → if revoked or expired, fail loudly instead of reporting "no transactions".
 
 > **Amendment, 2026-07-26 — `manualUpdate` left this phase for Phase 0.** It was here because the debounce looked like it needed persistence; it does not, because Pluggy enforces the interval itself (§11). The poll loop lives in `core/refresh.ts` and `init` is its first caller. What stays here is exposing it as an MCP tool, which is the part that needs §16.4's error split settled, and `listSources`.
+
+> **Amendment, 2026-07-26 — `manualUpdate` did not go anywhere; it is deleted.** The amendment above moved it to Phase 0, and connector 200's refusal then removed it altogether (§14.5). Nothing about it comes back to this phase. **What is left here is `listSources` and pitfall #7**, and the pitfall is now the whole of the phase's value: an empty response has to be checked against consent and fail loudly rather than report "no transactions". §16.4's error split is still owed, by the tools that remain rather than by this one — and the recon adds a constraint to `listSources` itself: `GET /consents?itemId=` returns a consent whose own `itemId` field is a *different* UUID from the one queried, on all three connections, so the consent cannot be joined back to our connection by its id. The only reliable association is "this is what the endpoint returned when asked about that item".
 
 ### Phase 6 — Installments
 
@@ -813,6 +949,8 @@ Caveat that governs everything below: **only `internal/provider/sqlite` and `int
 >
 > Cancellation is the one part not adopted. In-loop checks earn their keep when this is an MCP tool a client can cancel without killing the process; today the only caller is `init`, where Ctrl-C ends the process and the handler's job is just to give the cursor back.
 
+> **Amendment, 2026-07-26 — the loop is deleted, and the finding it was adopted for outlives it.** `core/refresh.ts` went with `manualUpdate` (§14.5), so nothing in this codebase polls anything today, and the backoff shape sits in the "adopt" column waiting for the day something does. The correction is what is worth keeping, because it is about retry loops rather than about item updates: **enumerate the states worth stopping on, never the states worth continuing on.** A wrong "keep going" allowlist spins for eighteen minutes; a wrong "stop" list terminates early and reports. Only one of those failures is visible.
+
 **The liquidated-investment filter, verbatim including all three conditions:** skip when `status == "TOTAL_WITHDRAWAL" && balance == 0 && amount == 0`. Pluggy returns fully-withdrawn positions forever. The three-way `AND` is itself the finding — status alone was evidently not sufficient. Also strip the nested `transactions[]` array a position carries; it is unbounded and will dominate a response.
 
 **The bounded response shape of the current-bill tool:** seven scalars plus exactly five top transactions. It is the only payload in the repo that respects a context window, and it is the model for `getBillSummary`.
@@ -838,6 +976,10 @@ Caveat that governs everything below: **only `internal/provider/sqlite` and `int
 > **Amendment, 2026-07-26 — one send function, now two windows.** `PATCH /items/{id}` is limited to 20/min where everything else gets 360, so a single shared window would let a fan-out of reads spend the update budget. Both windows are claimed inside `transport`, which is the same lesson applied twice: the choke point decides, not the call site.
 >
 > This section also acquired a scar of our own, in the same family as the serializer above. `classify` built its message from the status code and discarded the response body, so the first real 400 from `PATCH /items/{id}` said "Pluggy returned 400" and named none of the four causes Pluggy documents for that status. The evidence was deleted before a human could see it, again, and it took a live credential to notice. **Every non-2xx body is parsed and its explanation repeated.**
+
+> **Amendment, 2026-07-26 — one send function, one window again.** The second window went out with `manualUpdate` (§14.5): there is no `PATCH /items/` left to limit separately, so the rule reverts to the form this section states, and the lesson loses a qualifier rather than gaining one. The choke point decides, not the call site.
+>
+> The scar above stays, because it was never about updating an item. Every non-2xx body is parsed and its explanation repeated, and the read path needs that from a 400 or a 410 exactly as much as the refresh needed it: §14.2's 410 carries `ENDPOINT_DEPRECATED` and names the endpoint that replaced it, and a client that threw the status code alone would have reported "Pluggy returned 410" and left a human to find the migration on their own.
 
 **A declared tool parameter that never reaches the wire.** One transaction filter is parsed, validated, logged and assigned to a struct field that the query builder never reads. The tool advertises a filter that does nothing. **Every tool parameter needs a test proving it reaches the request.**
 
@@ -870,6 +1012,8 @@ That is direct evidence for §14.2's choice to make `getInstallments` a derived 
 Decisions this document names but does not make. Each says what it blocks, so a session picking up the ADR knows whether it can proceed.
 
 - **Cache freshness by range** — how to know whether `[from, to]` is partially cached. `fresh(accountId, from, to)` is still hand-waved, and it is load-bearing for every read path. Blocks phase 1.
+
+  > **Amendment, 2026-07-26 — harder than when it was written.** The 7-day window Phase 1 leans on belongs to regulated Open Finance connectors, and connector 200 reports `isOpenFinance: false`, so the justification does not transfer: neither the lookback window nor the monthly quota table is ours to reason about, because both describe the connections made one level down inside MeuPluggy. We cannot force a refresh (§11), and one of the author's three connections is stalled — `nextAutoSyncAt: null`, `lastUpdatedAt` three days old, `status: UPDATED`, no error and no `statusDetail` to explain it. So freshness cannot be predicted from the connector, cannot be forced from the API, and cannot be inferred from the item's own fields. Whatever `fresh(accountId, from, to)` becomes has to be built on what we already fetched and when, not on a promise about what Pluggy holds. `docs/prd.md` carries this as the first of its blocking decisions.
 - ~~**Config format versioning** written by `init`. Blocks phase 0.~~ **Closed 2026-07-25** by removing the config file: configuration is environment-only (§4). Reopens the day a config file returns, and the answer waiting for it is an integer `version` field with a forward migration chain, refusing to guess when the file is newer than the binary.
 - **Test fixtures without committing real bank statements** to a public repository (§1 makes the repo public). Blocks phase 0.5, which is where fixtures get captured.
 - **`camelCase` or `snake_case`** for tool names (§14.0). Mechanical to apply, expensive to change after the README documents it. Blocks phase 1.
@@ -878,3 +1022,5 @@ Decisions this document names but does not make. Each says what it blocks, so a 
 - **`manageClosingDate` as one tool with an `operation` enum, versus three verbs** (§14.3). Blocks phase 4.
 
 Two more are empirical rather than decisions, and Phase 0.5 exists to answer them: transaction id stability across re-sync (which §12's whole override design rests on) and whether Connector 200 is a regulated or Direct connector (which three separate decisions branch on blindly).
+
+> **Amendment, 2026-07-26 — one of the two is answered, and a different one takes its place.** Connector 200 is neither regulated nor Direct: it is Pluggy's own aggregator, and the three decisions that branched on it now branch on `isOpenFinance: false` (§15 Phase 0.5's amendment). Transaction id stability is still open and now needs a manual refresh inside meu.pluggy.ai to answer at all, since `PATCH /items/{id}` is refused. Joining it as the second open empirical question: whether the general rate limit is 360 per minute or per hour, which the recon could not settle because it never came close to either bound.
