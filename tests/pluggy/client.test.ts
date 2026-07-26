@@ -78,10 +78,12 @@ function harness(handler?: Handler): Harness {
 
   const fetch = fakeFetch(
     handler ??
-      ((request) =>
-        isAuth(request)
-          ? json({ apiKey: fakeJwt(new Date(clock.now().getTime() + KEY_LIFETIME_MS)) })
-          : json(itemBody(ID))),
+      ((request) => {
+        if (isAuth(request)) {
+          return json({ apiKey: fakeJwt(new Date(clock.now().getTime() + KEY_LIFETIME_MS)) });
+        }
+        return json(itemBody(ID));
+      }),
   );
   const log = fakeLogger();
 
@@ -140,11 +142,12 @@ describe("createPluggyClient", () => {
   });
 
   it("keeps a null lastUpdatedAt null instead of inventing a date", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(itemBody(ID, { lastUpdatedAt: null })),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(itemBody(ID, { lastUpdatedAt: null }));
+    });
 
     assert.equal((await client.getConnection(ID)).lastUpdatedAt, null);
   });
@@ -184,9 +187,10 @@ describe("createPluggyClient", () => {
         return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
       }
 
-      return new URL(request.url).pathname === "/items/" + ID
-        ? json(itemBody(ID))
-        : json(accountPage(1, 1, [accountBody("account-1")]));
+      if (new URL(request.url).pathname === "/items/" + ID) {
+        return json(itemBody(ID));
+      }
+      return json(accountPage(1, 1, [accountBody("account-1")]));
     });
 
     await client.getAccounts(ID);
@@ -203,7 +207,10 @@ describe("createPluggyClient", () => {
         return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
       }
 
-      return new URL(request.url).pathname === "/accounts/acc-1" ? json(accountBody("acc-1")) : json(itemBody(ID));
+      if (new URL(request.url).pathname === "/accounts/acc-1") {
+        return json(accountBody("acc-1"));
+      }
+      return json(itemBody(ID));
     });
 
     await client.getAccount("acc-1");
@@ -245,9 +252,12 @@ describe("createPluggyClient", () => {
    * on every single request instead of once.
    */
   it("falls back to a future expiry for a key with no exp claim, not a past one", async () => {
-    const { client, authCount } = harness((request) =>
-      isAuth(request) ? json({ apiKey: "opaque-key-that-is-not-a-jwt" }) : json(itemBody(ID)),
-    );
+    const { client, authCount } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: "opaque-key-that-is-not-a-jwt" });
+      }
+      return json(itemBody(ID));
+    });
 
     await client.getConnection(ID);
     await client.getConnection(OTHER_ID);
@@ -257,9 +267,12 @@ describe("createPluggyClient", () => {
 
   it("uses a JWT expiry that is shorter than the fallback lifetime", async () => {
     const expiresAt = new Date(NOW.getTime() + 45 * 60 * 1000);
-    const { client, clock, authCount } = harness((request) =>
-      isAuth(request) ? json({ apiKey: fakeJwt(expiresAt) }) : json(itemBody(ID)),
-    );
+    const { client, clock, authCount } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(expiresAt) });
+      }
+      return json(itemBody(ID));
+    });
 
     await client.getConnection(ID);
     clock.advance(35 * 60 * 1000);
@@ -301,7 +314,10 @@ describe("createPluggyClient", () => {
       if (isAuth(request)) {
         return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
       }
-      return index === 1 ? json({ message: "expired" }, 401) : json(itemBody(ID));
+      if (index === 1) {
+        return json({ message: "expired" }, 401);
+      }
+      return json(itemBody(ID));
     });
 
     await client.getConnection(ID);
@@ -311,20 +327,24 @@ describe("createPluggyClient", () => {
   });
 
   it("fails with AuthError when the retried request is refused again", async () => {
-    const { client, fetch } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ message: "nope" }, 401),
-    );
+    const { client, fetch } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json({ message: "nope" }, 401);
+    });
 
     await assert.rejects(client.getConnection(ID), AuthError);
     assert.equal(fetch.requests.filter((request) => !isAuth(request)).length, 2, "retried more than once");
   });
 
   it("reports refused credentials as an AuthError without retrying forever", async () => {
-    const { client, authCount } = harness((request) =>
-      isAuth(request) ? json({ message: "bad credentials" }, 401) : json(itemBody(ID)),
-    );
+    const { client, authCount } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ message: "bad credentials" }, 401);
+      }
+      return json(itemBody(ID));
+    });
 
     await assert.rejects(
       client.verifyCredentials(),
@@ -334,7 +354,12 @@ describe("createPluggyClient", () => {
   });
 
   it("names a malformed auth response", async () => {
-    const { client } = harness((request) => (isAuth(request) ? json({ apiKey: null }) : json(itemBody(ID))));
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: null });
+      }
+      return json(itemBody(ID));
+    });
 
     await assert.rejects(
       client.verifyCredentials(),
@@ -357,11 +382,12 @@ describe("createPluggyClient", () => {
     ];
 
     for (const { status, expected, kind, message } of cases) {
-      const { client } = harness((request) =>
-        isAuth(request)
-          ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-          : json({ message: "no" }, status),
-      );
+      const { client } = harness((request) => {
+        if (isAuth(request)) {
+          return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+        }
+        return json({ message: "no" }, status);
+      });
 
       await assert.rejects(
         client.getConnection(ID),
@@ -385,15 +411,23 @@ describe("createPluggyClient", () => {
       {
         why: "the connection read before an account list",
         request: (client) => client.getAccounts(ID),
-        response: (request) =>
-          request.url.endsWith(`/items/${ID}`) ? json({ message: "unavailable" }, 500) : json(accountPage(1, 1, [])),
+        response: (request) => {
+          if (request.url.endsWith(`/items/${ID}`)) {
+            return json({ message: "unavailable" }, 500);
+          }
+          return json(accountPage(1, 1, []));
+        },
         message: new RegExp(`connection ${ID}`),
       },
       {
         why: "the first account-list page",
         request: (client) => client.getAccounts(ID),
-        response: (request) =>
-          request.url.endsWith(`/items/${ID}`) ? json(itemBody(ID)) : json({ message: "unavailable" }, 500),
+        response: (request) => {
+          if (request.url.endsWith(`/items/${ID}`)) {
+            return json(itemBody(ID));
+          }
+          return json({ message: "unavailable" }, 500);
+        },
         message: new RegExp(`accounts ${ID}`),
       },
       {
@@ -415,20 +449,23 @@ describe("createPluggyClient", () => {
       {
         why: "the account owner's connection read",
         request: (client) => client.getAccount("account-1"),
-        response: (request) =>
-          request.url.endsWith("/accounts/account-1")
-            ? json(accountBody("account-1"))
-            : json({ message: "unavailable" }, 500),
+        response: (request) => {
+          if (request.url.endsWith("/accounts/account-1")) {
+            return json(accountBody("account-1"));
+          }
+          return json({ message: "unavailable" }, 500);
+        },
         message: new RegExp(`connection ${ID}`),
       },
     ];
 
     for (const { why, request, response, message } of cases) {
-      const { client } = harness((fetchRequest, index) =>
-        isAuth(fetchRequest)
-          ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-          : response(fetchRequest, index),
-      );
+      const { client } = harness((fetchRequest, index) => {
+        if (isAuth(fetchRequest)) {
+          return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+        }
+        return response(fetchRequest, index);
+      });
 
       await assert.rejects(request(client), (error: Error) => {
         assert.match(error.message, message, why);
@@ -450,11 +487,12 @@ describe("createPluggyClient", () => {
   });
 
   it("waits out a 429 on a read too, since both paths share the send function", async () => {
-    const { client, slept, fetch, log } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ message: "slow down" }, 429, { "retry-after": "3" }),
-    );
+    const { client, slept, fetch, log } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json({ message: "slow down" }, 429, { "retry-after": "3" });
+    });
 
     await assert.rejects(client.getConnection(ID), RateLimitError);
 
@@ -478,11 +516,12 @@ describe("createPluggyClient", () => {
   });
 
   it("rejects a 200 whose body is not the shape we expect", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ id: ID, connector: "Nubank" }),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json({ id: ID, connector: "Nubank" });
+    });
 
     await assert.rejects(
       client.getConnection(ID),
@@ -494,11 +533,12 @@ describe("createPluggyClient", () => {
   });
 
   it("rejects a successful response that is not JSON", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : new Response("<html>gateway</html>", { status: 200 }),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return new Response("<html>gateway</html>", { status: 200 });
+    });
 
     await assert.rejects(
       client.getConnection(ID),
@@ -507,11 +547,12 @@ describe("createPluggyClient", () => {
   });
 
   it("names every malformed field in a successful item response", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(itemBody(ID, { connector: {}, parameter: {} })),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(itemBody(ID, { connector: {}, parameter: {} }));
+    });
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.equal(
@@ -523,9 +564,12 @@ describe("createPluggyClient", () => {
   });
 
   it("names a root-level item response mismatch", async () => {
-    const { client } = harness((request) =>
-      isAuth(request) ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) }) : json(null),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(null);
+    });
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.equal(error.message, `connection ${ID} did not match the shape we expect, at: (root)`);
@@ -536,11 +580,12 @@ describe("createPluggyClient", () => {
   it("passes every request through the limiter, auth included", async () => {
     const clock = fixedClock(NOW);
     const acquired: number[] = [];
-    const fetch = fakeFetch((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(itemBody(ID)),
-    );
+    const fetch = fakeFetch((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(itemBody(ID));
+    });
 
     const client = createPluggyClient({
       credentials: CREDENTIALS,
@@ -562,39 +607,41 @@ describe("createPluggyClient", () => {
   });
 
   it("reads the MFA prompt's label out of the item", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(
-            itemBody(ID, {
-              status: "WAITING_USER_INPUT",
-              executionStatus: "WAITING_USER_INPUT",
-              parameter: { name: "token", label: "Chave de segurança", type: "string" },
-            }),
-          ),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(
+        itemBody(ID, {
+          status: "WAITING_USER_INPUT",
+          executionStatus: "WAITING_USER_INPUT",
+          parameter: { name: "token", label: "Chave de segurança", type: "string" },
+        }),
+      );
+    });
 
     assert.equal((await client.getConnection(ID)).parameter, "Chave de segurança");
   });
 
   it("flattens the statusDetail warnings a PARTIAL_SUCCESS carries", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(
-            itemBody(ID, {
-              status: "UPDATED",
-              executionStatus: "PARTIAL_SUCCESS",
-              statusDetail: {
-                creditCards: {
-                  isUpdated: false,
-                  warnings: [{ code: "423", message: "Open Finance monthly rate limit reached" }],
-                },
-                accounts: { isUpdated: true, warnings: [] },
-              },
-            }),
-          ),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(
+        itemBody(ID, {
+          status: "UPDATED",
+          executionStatus: "PARTIAL_SUCCESS",
+          statusDetail: {
+            creditCards: {
+              isUpdated: false,
+              warnings: [{ code: "423", message: "Open Finance monthly rate limit reached" }],
+            },
+            accounts: { isUpdated: true, warnings: [] },
+          },
+        }),
+      );
+    });
 
     assert.deepEqual((await client.getConnection(ID)).warnings, [
       "creditCards: Open Finance monthly rate limit reached",
@@ -602,21 +649,23 @@ describe("createPluggyClient", () => {
   });
 
   it("ignores an advisory product without status details", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(itemBody(ID, { statusDetail: { accounts: null } })),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(itemBody(ID, { statusDetail: { accounts: null } }));
+    });
 
     assert.deepEqual((await client.getConnection(ID)).warnings, []);
   });
 
   it("survives a statusDetail shaped in a way we did not predict", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(itemBody(ID, { statusDetail: "something else entirely" })),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(itemBody(ID, { statusDetail: "something else entirely" }));
+    });
 
     const connection = await client.getConnection(ID);
 
@@ -625,18 +674,19 @@ describe("createPluggyClient", () => {
   });
 
   it("repeats Pluggy's own explanation of a 400 rather than only its number", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(
-            {
-              code: 400,
-              codeDescription: "CONNECTOR_REQUIRED_PARAMETER_VALIDATION_ERROR",
-              message: "The parameter 'token' is required to be renewed for item update.",
-            },
-            400,
-          ),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(
+        {
+          code: 400,
+          codeDescription: "CONNECTOR_REQUIRED_PARAMETER_VALIDATION_ERROR",
+          message: "The parameter 'token' is required to be renewed for item update.",
+        },
+        400,
+      );
+    });
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.equal(
@@ -648,19 +698,20 @@ describe("createPluggyClient", () => {
   });
 
   it("carries the retry-after date out of a login-failure lockout", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json(
-            {
-              code: 400,
-              codeDescription: "TOO_MANY_CONSECUTIVE_LOGIN_FAILURES",
-              message: "Too many consecutive login failures.",
-              data: { canRetryAfterDate: "2026-07-26T12:15:00.000Z" },
-            },
-            400,
-          ),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(
+        {
+          code: 400,
+          codeDescription: "TOO_MANY_CONSECUTIVE_LOGIN_FAILURES",
+          message: "Too many consecutive login failures.",
+          data: { canRetryAfterDate: "2026-07-26T12:15:00.000Z" },
+        },
+        400,
+      );
+    });
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.match(error.message, /retry after 2026-07-26T12:15:00.000Z/);
@@ -669,11 +720,12 @@ describe("createPluggyClient", () => {
   });
 
   it("still says something useful when the error body is not an envelope", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : new Response("<html>gateway</html>", { status: 502 }),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return new Response("<html>gateway</html>", { status: 502 });
+    });
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.equal(error.message, `Pluggy returned 502 while connection ${ID}`);
@@ -682,11 +734,12 @@ describe("createPluggyClient", () => {
   });
 
   it("keeps the custom not-found message instead of Pluggy's envelope", async () => {
-    const { client } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ message: "wrong account" }, 404),
-    );
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json({ message: "wrong account" }, 404);
+    });
 
     await assert.rejects(client.getConnection(ID), (error: Error) => {
       assert.equal(error.message, "not found — wrong id, or an id belonging to another Pluggy account");
@@ -707,11 +760,12 @@ describe("createPluggyClient", () => {
     ];
 
     for (const { body, expected } of cases) {
-      const { client } = harness((request) =>
-        isAuth(request)
-          ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-          : json(body, 503),
-      );
+      const { client } = harness((request) => {
+        if (isAuth(request)) {
+          return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+        }
+        return json(body, 503);
+      });
 
       await assert.rejects(client.getConnection(ID), (error: Error) => {
         assert.equal(error.message, expected);
@@ -721,11 +775,12 @@ describe("createPluggyClient", () => {
   });
 
   it("falls back to a minute when the 429 names no delay", async () => {
-    const { client, slept } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ message: "slow down" }, 429),
-    );
+    const { client, slept } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json({ message: "slow down" }, 429);
+    });
 
     await assert.rejects(client.getConnection(ID), RateLimitError);
 
@@ -733,11 +788,12 @@ describe("createPluggyClient", () => {
   });
 
   it("falls back to a minute when the 429 names a zero delay", async () => {
-    const { client, slept } = harness((request) =>
-      isAuth(request)
-        ? json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) })
-        : json({ message: "slow down" }, 429, { "retry-after": "0" }),
-    );
+    const { client, slept } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json({ message: "slow down" }, 429, { "retry-after": "0" });
+    });
 
     await assert.rejects(client.getConnection(ID), RateLimitError);
 
@@ -751,7 +807,10 @@ describe("createPluggyClient", () => {
         return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
       }
       attempts += 1;
-      return attempts === 1 ? json({ message: "slow down" }, 429, { "retry-after": "1" }) : json(itemBody(ID));
+      if (attempts === 1) {
+        return json({ message: "slow down" }, 429, { "retry-after": "1" });
+      }
+      return json(itemBody(ID));
     });
 
     assert.equal((await client.getConnection(ID)).id, ID);

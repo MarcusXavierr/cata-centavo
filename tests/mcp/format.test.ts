@@ -13,7 +13,12 @@ describe("toDecimal", () => {
   ];
 
   for (const { cents, text, why } of money) {
-    it(`formats ${cents} cents as ${text}${why === undefined ? "" : `: ${why}`}`, () => {
+    let suffix = "";
+    if (why !== undefined) {
+      suffix = `: ${why}`;
+    }
+
+    it(`formats ${cents} cents as ${text}${suffix}`, () => {
       assert.equal(toDecimal(cents), text);
     });
   }

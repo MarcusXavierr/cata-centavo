@@ -9,10 +9,14 @@ import { fakeBank, threeConnections } from "../fakes/fake-bank.ts";
 function toFailure(error: unknown): BankFailure {
   assert.ok(error instanceof Error);
 
-  return {
-    kind: error instanceof AuthError ? "auth" : "unavailable",
-    message: error.message,
-  };
+  let kind: BankFailure["kind"];
+  if (error instanceof AuthError) {
+    kind = "auth";
+  } else {
+    kind = "unavailable";
+  }
+
+  return { kind, message: error.message };
 }
 
 describe("collectAccounts", () => {
@@ -68,10 +72,17 @@ describe("collectAccounts", () => {
         accounts[connectionId] = [];
       }
 
+      let unreachableField: { unreachable: Readonly<Record<string, Error>> } | Record<string, never>;
+      if (broken === undefined) {
+        unreachableField = {};
+      } else {
+        unreachableField = { unreachable: broken };
+      }
+
       const bank = fakeBank({
         ...fixture,
         accounts,
-        ...(broken === undefined ? {} : { unreachable: broken }),
+        ...unreachableField,
       });
       const result = await collectAccounts(bank, fixture.connections.map(({ id }) => id), toFailure);
 

@@ -46,10 +46,13 @@ export function resolveInvocation(argv: readonly string[]): Invocation {
   } catch (error) {
     // parseArgs throws on an unknown flag. Returning it as a value keeps this
     // function pure and leaves the choice of how to fail with the caller.
-    return {
-      kind: "error",
-      message: error instanceof Error ? error.message : String(error),
-    };
+    let message: string;
+    if (error instanceof Error) {
+      message = error.message;
+    } else {
+      message = String(error);
+    }
+    return { kind: "error", message };
   }
 
   if (parsed.values.help === true) return { kind: "help" };

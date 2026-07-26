@@ -115,7 +115,10 @@ export async function handleGetBalanceByAccount(deps: ToolDeps, input: unknown):
 async function getConfiguredAccount(source: Extract<Source, { readonly ok: true }>, accountId: string): Promise<Account | null> {
   try {
     const account = await source.bank.getAccount(accountId);
-    return source.connections.includes(account.connectionId) ? account : null;
+    if (source.connections.includes(account.connectionId)) {
+      return account;
+    }
+    return null;
   } catch (error) {
     if (source.toFailure(error).kind === "unknown-connection") return null;
     throw error;
@@ -142,6 +145,13 @@ function textResult(payload: unknown): CallToolResult {
 }
 
 function formatAccount(account: Account): unknown {
+  let amountField: { usedCredit: string } | { balance: string };
+  if (account.type === ACCOUNT_TYPES.credit) {
+    amountField = { usedCredit: toDecimal(account.amountCents) };
+  } else {
+    amountField = { balance: toDecimal(account.amountCents) };
+  }
+
   return prune({
     id: account.id,
     connectionId: account.connectionId,
@@ -149,9 +159,7 @@ function formatAccount(account: Account): unknown {
     name: account.name,
     type: account.type,
     subtype: account.subtype,
-    ...(account.type === ACCOUNT_TYPES.credit
-      ? { usedCredit: toDecimal(account.amountCents) }
-      : { balance: toDecimal(account.amountCents) }),
+    ...amountField,
     currency: account.currency,
     lastUpdatedAt: account.lastUpdatedAt?.toISOString() ?? null,
     credit: formatCredit(account.credit),
@@ -171,7 +179,10 @@ function formatCredit(credit: CreditDetails | null): unknown {
 }
 
 function decimalOrNull(cents: number | null): string | null {
-  return cents === null ? null : toDecimal(cents);
+  if (cents === null) {
+    return null;
+  }
+  return toDecimal(cents);
 }
 
 function isoOrNull(date: Date | null): string | null {

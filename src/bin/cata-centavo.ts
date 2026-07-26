@@ -55,7 +55,11 @@ function readVersion(): string {
  * *is* the protocol channel. All human-facing output goes to stderr.
  */
 function say(message: string): void {
-  process.stderr.write(message.endsWith("\n") ? message : `${message}\n`);
+  if (message.endsWith("\n")) {
+    process.stderr.write(message);
+  } else {
+    process.stderr.write(`${message}\n`);
+  }
 }
 
 const systemClock = { now: () => new Date() };
@@ -81,6 +85,26 @@ const sleep = (milliseconds: number): Promise<void> =>
     setTimeout(resolve, milliseconds);
   });
 
+/** Builds the source the server runs against, or the problems that block it, from a loaded config. */
+function toSource(result: ReturnType<typeof loadConfig>, log: ReturnType<typeof createLogger>): Source {
+  if (!result.ok) {
+    return { ok: false, problems: result.problems };
+  }
+
+  return {
+    ok: true,
+    connections: result.config.itemIds,
+    bank: createPluggyClient({
+      credentials: result.config.credentials,
+      clock: systemClock,
+      fetch: globalThis.fetch,
+      sleep,
+      log,
+    }),
+    toFailure,
+  };
+}
+
 async function run(command: Command): Promise<number> {
   if (command === COMMANDS.init) {
     const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
@@ -104,21 +128,7 @@ async function run(command: Command): Promise<number> {
     const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
     const log = createLogger({ env: process.env, logFile: paths.logFile });
     const result = loadConfig(process.env);
-
-    const source: Source = result.ok
-      ? {
-          ok: true,
-          connections: result.config.itemIds,
-          bank: createPluggyClient({
-            credentials: result.config.credentials,
-            clock: systemClock,
-            fetch: globalThis.fetch,
-            sleep,
-            log,
-          }),
-          toFailure,
-        }
-      : { ok: false, problems: result.problems };
+    const source = toSource(result, log);
 
     await createServer({ source, version: readVersion(), log }).connect(new StdioServerTransport());
     return 0;

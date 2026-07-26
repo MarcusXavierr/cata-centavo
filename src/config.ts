@@ -139,21 +139,22 @@ export type Paths = {
 export function resolvePaths(env: Env, system: System): Paths {
   const darwin = system.platform === "darwin";
 
-  const cacheHome = xdgHome(
-    env,
-    "XDG_CACHE_HOME",
-    darwin ? join(system.home, "Library", "Caches") : join(system.home, ".cache"),
-  );
-  const dataHome = xdgHome(
-    env,
-    "XDG_DATA_HOME",
-    darwin ? join(system.home, "Library", "Application Support") : join(system.home, ".local", "share"),
-  );
-  const stateHome = xdgHome(
-    env,
-    "XDG_STATE_HOME",
-    darwin ? join(system.home, "Library", "Logs") : join(system.home, ".local", "state"),
-  );
+  let cacheFallback: string;
+  let dataFallback: string;
+  let stateFallback: string;
+  if (darwin) {
+    cacheFallback = join(system.home, "Library", "Caches");
+    dataFallback = join(system.home, "Library", "Application Support");
+    stateFallback = join(system.home, "Library", "Logs");
+  } else {
+    cacheFallback = join(system.home, ".cache");
+    dataFallback = join(system.home, ".local", "share");
+    stateFallback = join(system.home, ".local", "state");
+  }
+
+  const cacheHome = xdgHome(env, "XDG_CACHE_HOME", cacheFallback);
+  const dataHome = xdgHome(env, "XDG_DATA_HOME", dataFallback);
+  const stateHome = xdgHome(env, "XDG_STATE_HOME", stateFallback);
 
   return {
     cacheDb: join(cacheHome, APP_DIR, "cache.db"),
@@ -165,5 +166,8 @@ export function resolvePaths(env: Env, system: System): Paths {
 /** The XDG spec says a relative path in one of these variables must be ignored. */
 function xdgHome(env: Env, name: string, fallback: string): string {
   const value = env[name];
-  return value !== undefined && isAbsolute(value) ? value : fallback;
+  if (value !== undefined && isAbsolute(value)) {
+    return value;
+  }
+  return fallback;
 }

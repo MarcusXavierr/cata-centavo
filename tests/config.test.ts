@@ -17,7 +17,12 @@ describe("loadConfig", () => {
     const result = loadConfig({ ...VALID, PLUGGY_ITEM_IDS: `${ID_A},${ID_B}` });
 
     assert.equal(result.ok, true);
-    assert.deepEqual(result.ok ? result.config : null, {
+
+    let config = null;
+    if (result.ok) {
+      config = result.config;
+    }
+    assert.deepEqual(config, {
       credentials: { clientId: "client-id", clientSecret: "client-secret" },
       itemIds: [ID_A, ID_B],
     });
@@ -28,7 +33,12 @@ describe("loadConfig", () => {
 
     for (const PLUGGY_ITEM_IDS of cases) {
       const result = loadConfig({ ...VALID, PLUGGY_ITEM_IDS });
-      assert.deepEqual(result.ok ? result.config.itemIds : null, [ID_A, ID_B], PLUGGY_ITEM_IDS);
+
+      let itemIds = null;
+      if (result.ok) {
+        itemIds = result.config.itemIds;
+      }
+      assert.deepEqual(itemIds, [ID_A, ID_B], PLUGGY_ITEM_IDS);
     }
   });
 
@@ -47,7 +57,12 @@ describe("loadConfig", () => {
     for (const { name, env, expect } of cases) {
       const result = loadConfig(env);
       assert.equal(result.ok, false, name);
-      assert.match(result.ok ? "" : result.problems.join("\n"), expect, name);
+
+      let problems = "";
+      if (!result.ok) {
+        problems = result.problems.join("\n");
+      }
+      assert.match(problems, expect, name);
     }
   });
 
@@ -55,14 +70,24 @@ describe("loadConfig", () => {
     const result = loadConfig({});
 
     assert.equal(result.ok, false);
-    assert.equal(result.ok ? 0 : result.problems.length, 3);
+
+    let problemCount = 0;
+    if (!result.ok) {
+      problemCount = result.problems.length;
+    }
+    assert.equal(problemCount, 3);
   });
 
   it("never puts a secret value in a problem message", () => {
     const result = loadConfig({ ...VALID, PLUGGY_ITEM_IDS: "nope" });
 
     assert.equal(result.ok, false);
-    assert.doesNotMatch(result.ok ? "" : result.problems.join("\n"), /client-secret/);
+
+    let problems = "";
+    if (!result.ok) {
+      problems = result.problems.join("\n");
+    }
+    assert.doesNotMatch(problems, /client-secret/);
   });
 });
 

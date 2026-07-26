@@ -59,13 +59,27 @@ function sumBalances(accounts: readonly Account[]): Totals {
 }
 
 function createSummary(currency: string, accountsCounted: number, totals: Totals): Summary {
+  let investedFields: Pick<Summary, "investedCents"> | Record<string, never>;
+  if (totals.hasInvestments) {
+    investedFields = { investedCents: totals.investedCents };
+  } else {
+    investedFields = {};
+  }
+
+  let loanFields: Pick<Summary, "loanCents"> | Record<string, never>;
+  if (totals.hasLoans) {
+    loanFields = { loanCents: totals.loanCents };
+  } else {
+    loanFields = {};
+  }
+
   return {
     cashCents: totals.cashCents,
     creditUsedCents: totals.creditUsedCents,
     currency,
     accountsCounted,
-    ...(totals.hasInvestments ? { investedCents: totals.investedCents } : {}),
-    ...(totals.hasLoans ? { loanCents: totals.loanCents } : {}),
+    ...investedFields,
+    ...loanFields,
   };
 }
 

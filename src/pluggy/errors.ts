@@ -100,7 +100,10 @@ export function classify(status: number, describe: string, detail: string | null
 }
 
 function because(detail: string | null): string {
-  return detail === null ? "" : ` — ${detail}`;
+  if (detail === null) {
+    return "";
+  }
+  return ` — ${detail}`;
 }
 
 /**
@@ -108,24 +111,39 @@ function because(detail: string | null): string {
  * already has a better sentence than Pluggy's, so that one keeps ours.
  */
 export async function failureFor(response: Response, describe: string): Promise<PluggyError> {
-  return classify(response.status, describe, response.status === 404 ? null : await readErrorDetail(response));
+  let detail: string | null;
+  if (response.status === 404) {
+    detail = null;
+  } else {
+    detail = await readErrorDetail(response);
+  }
+  return classify(response.status, describe, detail);
 }
 
 export async function readErrorDetail(response: Response): Promise<string | null> {
   const parsed = API_ERROR.safeParse(await readJsonOrNull(response));
 
-  return parsed.success ? detailOf(parsed.data) : null;
+  if (parsed.success) {
+    return detailOf(parsed.data);
+  }
+  return null;
 }
 
 function detailOf(error: z.infer<typeof API_ERROR>): string | null {
   const parts = [error.codeDescription, error.message, retryHint(error.data?.canRetryAfterDate)];
   const detail = parts.filter((part) => part !== null && part !== undefined).join(": ");
 
-  return detail === "" ? null : detail;
+  if (detail === "") {
+    return null;
+  }
+  return detail;
 }
 
 function retryHint(at: string | null | undefined): string | null {
-  return at === null || at === undefined ? null : `retry after ${at}`;
+  if (at === null || at === undefined) {
+    return null;
+  }
+  return `retry after ${at}`;
 }
 
 async function readJsonOrNull(response: Response): Promise<unknown> {
