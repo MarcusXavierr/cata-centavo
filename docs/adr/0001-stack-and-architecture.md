@@ -180,6 +180,8 @@ tests/
 
 Enforcing this mechanically costs a third devDependency — neither `tsc` nor `@types/node` can express an import-direction constraint. Options: `dependency-cruiser`, or ESLint with `import/no-restricted-paths`. **Until one is added, the rule is convention, not enforcement**, and §7's "entire devDependencies" holds. Decide at phase 1, when `core/` first has something worth protecting; a cheap interim is a CI grep for forbidden import paths, which needs no dependency at all.
 
+> **Amendment, 2026-07-26 — `dependency-cruiser` it is, and it enforces more than this paragraph asked for.** ESLint's `no-restricted-imports` held the boundary for a day and was withdrawn: it reads one file at a time, and a cycle, an orphan and a composition-root violation are all properties of the graph. The first cruise found `storage/db.ts ⇄ migrations.ts`, invisible to a per-file linter since the day it was written. `core/` is now barred from every npm package rather than from `pluggy-sdk` by name, so the rule survives dependencies nobody has added yet, and `cli/`/`mcp/` are barred from constructing infrastructure at all — the invariant §16.4 leans on. Rules, thresholds and the dependency-cost decision are in [docs/plans/2026-07-26-dependency-rules-design.md](../plans/2026-07-26-dependency-rules-design.md).
+
 **Explicit naming and layout decisions:**
 
 - Directories are **not** named after architectural patterns (`ports/`, `adapters/`). The pattern lives in the direction of dependencies, not in a folder name.
