@@ -1,0 +1,6 @@
+# Sidecar runtime state. The config beside it is checked in; none of this is.
+*.jsonl
+*.log
+*.state.json
+*.control.json
+*.sock
