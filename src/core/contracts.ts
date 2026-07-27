@@ -27,7 +27,9 @@ export type FailureKind =
   | "rate-limited"
   | "unavailable"
   | "no-accounts"
-  | "bad-response";
+  | "bad-response"
+  | "consent-revoked"
+  | "consent-expired";
 
 /** A bank failure with a stable kind for programmatic handling. */
 export type BankFailure = {
@@ -85,6 +87,15 @@ export type Connection = {
    * has to check for undefined is a caller that will forget to.
    */
   readonly warnings: readonly string[];
+  /** How many consecutive login attempts the institution has refused. */
+  readonly failedLogins: number | null;
+};
+
+/** An Open Finance consent, as far as our domain is concerned. */
+export type Consent = {
+  readonly expiresAt: Date | null;
+  readonly revokedAt: Date | null;
+  readonly products: readonly string[];
 };
 
 /** What `init` needs from whoever holds the credentials. */
@@ -99,6 +110,8 @@ export type Bank = {
   getAccount(accountId: string): Promise<Account>;
   /** Every transaction on one account, walked to the end of the cursor. */
   getTransactions(account: Account): Promise<readonly Transaction[]>;
+  /** `null` when the endpoint answered with no consent at all — distinct from revoked. */
+  getConsent(connectionId: string): Promise<Consent | null>;
 };
 
 

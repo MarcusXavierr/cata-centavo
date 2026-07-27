@@ -5,6 +5,7 @@ import type { ToolDeps } from "./tools/result.ts";
 import type { Source } from "./source.ts";
 import { registerGetAccounts, registerGetBalanceByAccount } from "./tools/accounts.ts";
 import { registerGetBalance } from "./tools/balance.ts";
+import { registerListSources } from "./tools/sources.ts";
 import { registerGetTransactionDetails } from "./tools/transaction-details.ts";
 import { registerGetTransactions, registerListTransactions } from "./tools/transactions.ts";
 import { registerSetCategory, registerSetCounterpartyCategory } from "./tools/set-category.ts";
@@ -35,6 +36,7 @@ const REGISTRARS: readonly ((server: McpServer, deps: ToolDeps) => void)[] = [
   registerGetTransactionDetails,
   registerSetCategory,
   registerSetCounterpartyCategory,
+  registerListSources,
 ];
 
 function toolDeps(options: { readonly source: Source; readonly log: Logger }): ToolDeps {

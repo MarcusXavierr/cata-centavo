@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { COMMANDS, resolveInvocation, type Command } from "../cli/dispatch.ts";
+import * as doctor from "../cli/doctor.ts";
 import { exitCodeFor, formatInit, runInit, type StorageInfo } from "../cli/init.ts";
 import { loadConfig, resolvePaths } from "../config.ts";
 import { createLogger } from "../logging.ts";
@@ -15,6 +16,7 @@ import { createPluggyClient } from "../pluggy/client.ts";
 import { toFailure } from "../pluggy/errors.ts";
 import { createCategoryWriter } from "../storage/categories.ts";
 import { createTransactionStore } from "../storage/transactions.ts";
+import { readLocalState } from "../storage/diagnostics.ts";
 import { openDatabases, schemaVersion, type Databases } from "../storage/db.ts";
 
 
@@ -162,13 +164,38 @@ async function run(command: Command): Promise<number> {
     return exitCodeFor(report);
   }
 
-  if (command === COMMANDS.serve) {
-    return runServe();
+  if (command === COMMANDS.doctor) {
+    const paths = resolvePaths(process.env, { platform: process.platform, home: homedir() });
+    const log = createLogger({ env: process.env, logFile: paths.logFile });
+
+    const report = await doctor.runDoctor({
+      env: process.env,
+      createBank: (credentials) =>
+        createPluggyClient({ credentials, clock: systemClock, fetch: globalThis.fetch, sleep, log }),
+      readLocalState: () => readLocalStateOf(paths),
+      toFailure,
+      clock: systemClock,
+    });
+
+    for (const line of doctor.formatDoctor(report, systemClock)) {
+      say(line);
+    }
+
+    return doctor.exitCodeFor(report);
   }
 
-  // Phases 1 and 7 of the roadmap (ADR §15).
-  say(`[stub] command "${command}" is not implemented yet`);
-  return 1;
+  return runServe();
+}
+
+/** Opens both files, reads their diagnostic state, and closes them again. */
+function readLocalStateOf(paths: ReturnType<typeof resolvePaths>): doctor.LocalState {
+  const databases = openDatabases(paths);
+
+  try {
+    return readLocalState(databases.db);
+  } finally {
+    databases.close();
+  }
 }
 
 async function runServe(): Promise<number> {
@@ -216,6 +243,7 @@ function createReadySource(
     store: createTransactionStore(databases.db, log),
     toFailure,
     log,
+    clock: systemClock,
   });
   const writer = createCategoryWriter(databases.db, systemClock);
 

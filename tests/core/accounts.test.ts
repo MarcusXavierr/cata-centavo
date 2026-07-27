@@ -5,6 +5,9 @@ import { collectAccounts } from "../../src/core/accounts.ts";
 import type { BankFailure } from "../../src/core/contracts.ts";
 import { AuthError } from "../../src/pluggy/errors.ts";
 import { fakeBank, threeConnections } from "../fakes/fake-bank.ts";
+import { fixedClock } from "../fakes/fixed-clock.ts";
+
+const NOW = new Date("2026-07-25T12:00:00.000Z");
 
 function toFailure(error: unknown): BankFailure {
   assert.ok(error instanceof Error);
@@ -84,7 +87,7 @@ describe("collectAccounts", () => {
         accounts,
         ...unreachableField,
       });
-      const result = await collectAccounts(bank, fixture.connections.map(({ id }) => id), toFailure);
+      const result = await collectAccounts(bank, fixture.connections.map(({ id }) => id), toFailure, fixedClock(NOW));
 
       assert.equal(result.accounts.length, expectAccounts);
       assert.deepEqual(
@@ -94,14 +97,85 @@ describe("collectAccounts", () => {
     });
   }
 
-  it("explains why an empty connection is unavailable", async () => {
+  it("explains why an empty connection is unavailable, without guessing at consent", async () => {
     const fixture = threeConnections();
     const result = await collectAccounts(
       fakeBank({ ...fixture, accounts: { ...fixture.accounts, "conn-2": [] } }),
       fixture.connections.map(({ id }) => id),
       toFailure,
+      fixedClock(NOW),
     );
 
-    assert.match(result.unavailable[0]?.message ?? "", /conn-2.*no accounts.*revoked consent/i);
+    assert.match(result.unavailable[0]?.message ?? "", /conn-2.*no accounts/i);
+    assert.doesNotMatch(result.unavailable[0]?.message ?? "", /revoked consent is the usual cause/i);
+  });
+
+  it("reports a revoked consent by name and date when an empty connection's consent was revoked", async () => {
+    const fixture = threeConnections();
+    const result = await collectAccounts(
+      fakeBank({
+        ...fixture,
+        accounts: { ...fixture.accounts, "conn-2": [] },
+        consents: { "conn-2": { expiresAt: null, revokedAt: new Date("2026-07-20T00:00:00.000Z"), products: [] } },
+      }),
+      fixture.connections.map(({ id }) => id),
+      toFailure,
+      fixedClock(NOW),
+    );
+
+    assert.deepEqual(
+      result.unavailable.map(({ connectionId, kind }) => ({ connectionId, kind })),
+      [{ connectionId: "conn-2", kind: "consent-revoked" }],
+    );
+    assert.match(result.unavailable[0]?.message ?? "", /conn-2/);
+    assert.match(result.unavailable[0]?.message ?? "", /2026-07-20/);
+  });
+
+  it("reports an expired consent by name and date when an empty connection's consent expired", async () => {
+    const fixture = threeConnections();
+    const result = await collectAccounts(
+      fakeBank({
+        ...fixture,
+        accounts: { ...fixture.accounts, "conn-2": [] },
+        consents: { "conn-2": { expiresAt: new Date("2026-07-10T00:00:00.000Z"), revokedAt: null, products: [] } },
+      }),
+      fixture.connections.map(({ id }) => id),
+      toFailure,
+      fixedClock(NOW),
+    );
+
+    assert.deepEqual(
+      result.unavailable.map(({ connectionId, kind }) => ({ connectionId, kind })),
+      [{ connectionId: "conn-2", kind: "consent-expired" }],
+    );
+    assert.match(result.unavailable[0]?.message ?? "", /2026-07-10/);
+  });
+
+  it("falls back to no-accounts when the consent lookup itself throws", async () => {
+    const fixture = threeConnections();
+    const result = await collectAccounts(
+      fakeBank({
+        ...fixture,
+        accounts: { ...fixture.accounts, "conn-2": [] },
+        unreachableConsent: { "conn-2": new Error("consent endpoint is down") },
+      }),
+      fixture.connections.map(({ id }) => id),
+      toFailure,
+      fixedClock(NOW),
+    );
+
+    assert.deepEqual(
+      result.unavailable.map(({ connectionId, kind }) => ({ connectionId, kind })),
+      [{ connectionId: "conn-2", kind: "no-accounts" }],
+    );
+  });
+
+  it("never calls getConsent for a connection that returned accounts", async () => {
+    const fixture = threeConnections();
+    const bank = fakeBank(fixture);
+
+    await collectAccounts(bank, fixture.connections.map(({ id }) => id), toFailure, fixedClock(NOW));
+
+    assert.ok(!bank.calls.some((call) => call.startsWith("getConsent:")));
   });
 });

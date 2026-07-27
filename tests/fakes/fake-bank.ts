@@ -1,5 +1,5 @@
 import type { Account } from "../../src/core/account.ts";
-import type { Bank, Connection } from "../../src/core/contracts.ts";
+import type { Bank, Connection, Consent } from "../../src/core/contracts.ts";
 import type { Transaction } from "../../src/core/transaction.ts";
 import { AuthError, NotFoundError } from "../../src/pluggy/errors.ts";
 
@@ -11,6 +11,15 @@ export type FakeBankOptions = {
   readonly credentialsRejected?: string;
   /** Ids that fail with something other than "not found". */
   readonly unreachable?: Readonly<Record<string, Error>>;
+  /** An id with no entry answers `null`, the same as an empty `results` from Pluggy. */
+  readonly consents?: Readonly<Record<string, Consent | null>>;
+  /**
+   * Ids whose `getConsent` fails, independently of `unreachable`. A connection
+   * and its consent are two separate requests that settle independently
+   * (`core/diagnose.ts`), so a fake that could only break both together could
+   * not exercise either half alone.
+   */
+  readonly unreachableConsent?: Readonly<Record<string, Error>>;
 };
 
 export type FakeBank = Bank & {
@@ -27,6 +36,8 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
   const accounts = options.accounts ?? {};
   const transactions = options.transactions ?? {};
   const unreachable = options.unreachable ?? {};
+  const consents = options.consents ?? {};
+  const unreachableConsent = options.unreachableConsent ?? {};
 
   const calls: string[] = [];
 
@@ -41,6 +52,13 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
 
   function throwIfUnreachable(id: string): void {
     const failure = unreachable[id];
+    if (failure !== undefined) {
+      throw failure;
+    }
+  }
+
+  function throwIfConsentUnreachable(id: string): void {
+    const failure = unreachableConsent[id];
     if (failure !== undefined) {
       throw failure;
     }
@@ -85,6 +103,12 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
       throwIfUnreachable(account.connectionId);
       return transactions[account.id] ?? [];
     },
+
+    getConsent: async (connectionId) => {
+      calls.push(`getConsent:${connectionId}`);
+      throwIfConsentUnreachable(connectionId);
+      return consents[connectionId] ?? null;
+    },
   };
 }
 
@@ -99,6 +123,7 @@ export function connection(id: string, overrides: Partial<Connection> = {}): Con
     lastUpdatedAt: new Date("2026-07-25T09:00:00.000Z"),
     parameter: null,
     warnings: [],
+    failedLogins: 0,
     ...overrides,
   };
 }

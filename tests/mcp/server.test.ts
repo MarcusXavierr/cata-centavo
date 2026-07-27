@@ -31,6 +31,7 @@ describe("MCP server", () => {
       "getTransactionDetails",
       "setCategory",
       "setCounterpartyCategory",
+      "listSources",
     ]);
 
 

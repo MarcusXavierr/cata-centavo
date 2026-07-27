@@ -86,6 +86,7 @@ function depsWith(options: DependencyOptions = {}): ToolDeps & { readonly filter
       lastUpdatedAt: new Date("2026-07-25T09:00:00.000Z"),
       parameter: null,
       warnings: [],
+      failedLogins: null,
     }],
     accounts: { "conn-1": options.accounts ?? [account("acc-1")] },
   });

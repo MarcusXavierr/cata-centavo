@@ -52,7 +52,7 @@ export async function handleGetAccounts(deps: ToolDeps): Promise<CallToolResult>
     return finishToolError(log, startedAt, configurationProblems(deps.source.problems), { problems: deps.source.problems.length });
   }
 
-  const collected = await collectAccounts(deps.source.bank, deps.source.connections, deps.source.toFailure);
+  const collected = await collectAccounts(deps.source.bank, deps.source.connections, deps.source.toFailure, deps.clock);
   for (const unavailable of collected.unavailable) {
     log.warn(
       {
@@ -64,6 +64,13 @@ export async function handleGetAccounts(deps: ToolDeps): Promise<CallToolResult>
       },
       "Connection unavailable",
     );
+  }
+
+  if (collected.accounts.length === 0 && collected.unavailable.length > 0) {
+    return finishToolError(log, startedAt, noAccountsMessage(collected.unavailable), {
+      accounts: 0,
+      unavailable: collected.unavailable.length,
+    });
   }
 
   const response = { accounts: collected.accounts.map(formatAccount), unavailable: collected.unavailable };
@@ -118,6 +125,12 @@ async function getConfiguredAccount(source: Extract<Source, { readonly ok: true 
     if (source.toFailure(error).kind === "unknown-connection") return null;
     throw error;
   }
+}
+
+function noAccountsMessage(unavailable: readonly { readonly connectionId: string; readonly kind: string; readonly message: string }[]): string {
+  return `No accounts came back from any configured connection: ${unavailable
+    .map(({ connectionId, kind, message }) => `${connectionId} (${kind}): ${message}`)
+    .join("; ")}`;
 }
 
 function formatAccount(account: Account): unknown {

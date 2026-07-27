@@ -1,11 +1,11 @@
 import type { z } from "zod";
 
 import type { Account } from "../core/account.ts";
-import type { Bank, Connection } from "../core/contracts.ts";
+import type { Bank, Connection, Consent } from "../core/contracts.ts";
 import { failureFor, parse, readJson, ResponseShapeError } from "./errors.ts";
-import { toAccount, toConnection, toTransaction } from "./mapper.ts";
+import { toAccount, toConnection, toConsent, toTransaction } from "./mapper.ts";
 import { createTransport, type TransportOptions } from "./transport.ts";
-import { ACCOUNT, ACCOUNT_PAGE, ITEM, TRANSACTION_PAGE } from "./wire.ts";
+import { ACCOUNT, ACCOUNT_PAGE, CONSENT_PAGE, ITEM, TRANSACTION_PAGE } from "./wire.ts";
 
 export type PluggyClientOptions = TransportOptions;
 
@@ -57,6 +57,7 @@ function createTransactionWalker(get: Getter): (account: Account) => Promise<rea
  *
  * Construction performs no I/O (§16.2).
  */
+// eslint-disable-next-line max-lines-per-function -- a factory that assembles and returns one object, not logic to cut apart
 export function createPluggyClient(options: PluggyClientOptions): Bank {
   const transport = createTransport(options);
 
@@ -109,6 +110,20 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
     },
 
     getTransactions: (account) => walkTransactions(account),
+
+    getConsent: async (connectionId: string): Promise<Consent | null> => {
+      const encodedConnectionId = encodeURIComponent(connectionId);
+      const page = await get(
+        `/consents?itemId=${encodedConnectionId}`,
+        CONSENT_PAGE,
+        `consent ${connectionId}`,
+      );
+      const [first] = page.results;
+      if (first === undefined) {
+        return null;
+      }
+      return toConsent(first);
+    },
   };
 }
 
