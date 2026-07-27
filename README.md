@@ -14,11 +14,11 @@
   <img src="https://img.shields.io/badge/MCP-server-0A7CFF" alt="MCP server">
 </p>
 
-<a href="#tools">Tools</a> ·
 <a href="#install">Install</a> ·
 <a href="#commands">Commands</a> ·
 <a href="#categories">Categories</a> ·
 <a href="#what-it-cannot-see">Limits</a> ·
+<a href="#tools">Tools</a> ·
 <a href="#license">License</a>
 
 </div>
@@ -34,36 +34,6 @@ Cata-centavo lets you ask an agent about your own money. Point it at your bank a
 
 You run it on your machine, against your own accounts, and the categories you correct stay there. There is no hosted version and nothing multi-user about it.
 
-## Tools
-
-**Accounts and balances**
-- `getAccounts`: lists every account across your configured connections, with balances and credit card limits.
-- `getBalance`: consolidated cash and credit-used figures across all connections, reported separately because they are not the same kind of number.
-- `getBalanceByAccount`: the current figures and details for one account.
-
-**Spending**
-- `getTransactions`: totals spending and income over a date range, grouped by category.
-- `listTransactions`: individual transactions over a date range, paged.
-- `getTransactionDetails`: full details for a bounded set of transaction ids.
-
-**Credit cards**
-- `getBills`: statements for one card, newest first.
-- `getBillSummary`: the cycle still in progress, as two independent estimates rather than one invented number.
-- `setClosingDay`: records a card's closing day locally, for banks that do not report it.
-- `listClosingDays`: the closing days stored so far.
-- `deleteClosingDay`: drops a stored closing day.
-
-**Categories**
-- `setCategory`: corrects the category of specific transactions.
-- `setCounterpartyCategory`: assigns a category to everyone a CPF or CNPJ identifies, backwards and forwards.
-
-**Diagnostics**
-- `listSources`: lists every configured connection with its sync status and consent state.
-
-Each tool's exact parameters and return shape are published in its own MCP description, which is what a model actually reads and the one version that cannot drift out of sync with a signature.
-
-Instalment purchases do not have a tool of their own yet. Card transactions do carry instalment metadata, so `getTransactionDetails` will show it per transaction, but nothing reconstructs a purchase across its instalments.
-
 ## Install
 
 You need Node 22.13 or newer, and a Pluggy account with your banks already connected.
@@ -74,17 +44,17 @@ The bank data comes from [Pluggy](https://pluggy.ai), the Open Finance provider 
 
 
 
-1. At [MeuPluggy](https://meu.pluggy.ai/en) create your account and connect to your banks
+1. At [MeuPluggy](https://meu.pluggy.ai/en), create your account and connect your banks
 <img width="1530" height="617" alt="image" src="https://github.com/user-attachments/assets/15bde1c7-dfd9-4f9e-9f6b-e254522afd58" />
 
-2. Then go to the other [Plug portal](https://pluggy.ai/) login and connect your MeuPlug accounts to the Demo app. Also copy your `PLUGGY_CLIENT_ID` and `PLUGGY_CLIENT_SECRET` from this page
+2. Then go to the other [Pluggy portal](https://pluggy.ai/), log in, and connect your MeuPluggy accounts to the Demo app. Also copy your `PLUGGY_CLIENT_ID` and `PLUGGY_CLIENT_SECRET` from this page
 <img width="1918" height="595" alt="image" src="https://github.com/user-attachments/assets/be7670e9-35fc-4ea3-98d3-115298cd488f" />
 
-3. Then connect your MeuPluggy accounts, one by one into the Demo App 
+3. Then connect your MeuPluggy accounts one by one into the Demo App
 <img width="1206" height="813" alt="image" src="https://github.com/user-attachments/assets/66402550-ebeb-43ba-962b-3d091242e807" />
 
 
-4. And then copy the `PLUGGY_ITEM_IDS` one by one
+4. And then copy the `PLUGGY_ITEM_IDS`, one by one
 <img width="1851" height="627" alt="image" src="https://github.com/user-attachments/assets/16fc1d2a-39b2-4531-9ae6-487ade128006" />
 
 
@@ -96,9 +66,9 @@ PLUGGY_CLIENT_SECRET    from your Pluggy dashboard
 PLUGGY_ITEM_IDS         connection ids, separated by commas
 ```
 
-The plain way is to export them in your `.zshrc` or `.bashrc`, and on MCP configuration file put like `"PLUGGY_CLIENT_ID": "${PLUGGY_CLIENT_ID}"`. That leaves your keys in a file every shell reads. If you would rather not, `secret-tool` keeps them in your keyring and a small wrapper script can pull them out right before the server starts. Setups differ enough that it is worth pointing your agent at this page and asking it which one fits your machine.
+The plain way is to export them from your `.zshrc` or `.bashrc`, and in the MCP configuration file write `"PLUGGY_CLIENT_ID": "${PLUGGY_CLIENT_ID}"`. That leaves your keys in a file every shell reads. If you would rather not, `secret-tool` keeps them in your keyring and a small wrapper script can pull them out right before the server starts. Setups differ enough that it is worth pointing your agent at this page and asking it which one fits your machine.
 
-After configuring this, run `npx cata-centavo doctor` to validate your environment variables are working fine 
+After configuring this, run `npx cata-centavo doctor` to check that your environment variables are working
 
 <img width="894" height="191" alt="image" src="https://github.com/user-attachments/assets/adc2bb35-a161-4241-a33a-42846aa507a1" />
 
@@ -154,6 +124,36 @@ Ask the agent to show you what is uncategorized and tell it what those merchants
 - A bank linked in MeuPluggy whose UUID never reached `PLUGGY_ITEM_IDS` is invisible to this server. No endpoint lists the items on a Pluggy account, so this cannot be fixed in software. Compare `doctor`'s list against the banks you know you linked.
 - Freshness is Pluggy's schedule, not this server's. There is no "sync now": on-demand refresh is refused outright. One of the author's own three connections went three days without syncing while still reporting itself up to date, with nothing in the response explaining why.
 - A credit card's `usedCredit` figure is not what the card owes this month. It mixes the current billing cycle with instalments that have not been charged yet, and will not match what a banking app shows. `getBillSummary` answers that question instead, and it answers with a range rather than one number.
+
+## Tools
+
+**Accounts and balances**
+- `getAccounts`: lists every account across your configured connections, with balances and credit card limits.
+- `getBalance`: consolidated cash and credit-used figures across all connections, reported separately because they are not the same kind of number.
+- `getBalanceByAccount`: the current figures and details for one account.
+
+**Spending**
+- `getTransactions`: totals spending and income over a date range, grouped by category.
+- `listTransactions`: individual transactions over a date range, paged.
+- `getTransactionDetails`: full details for a bounded set of transaction ids.
+
+**Credit cards**
+- `getBills`: statements for one card, newest first.
+- `getBillSummary`: the cycle still in progress, as two independent estimates rather than one invented number.
+- `setClosingDay`: records a card's closing day locally, for banks that do not report it.
+- `listClosingDays`: the closing days stored so far.
+- `deleteClosingDay`: drops a stored closing day.
+
+**Categories**
+- `setCategory`: corrects the category of specific transactions.
+- `setCounterpartyCategory`: assigns a category to everyone a CPF or CNPJ identifies, backwards and forwards.
+
+**Diagnostics**
+- `listSources`: lists every configured connection with its sync status and consent state.
+
+Each tool's exact parameters and return shape are published in its own MCP description, which is what a model actually reads and the one version that cannot drift out of sync with a signature.
+
+Instalment purchases do not have a tool of their own yet. Card transactions do carry instalment metadata, so `getTransactionDetails` will show it per transaction, but nothing reconstructs a purchase across its instalments.
 
 ## License
 
