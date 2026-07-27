@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { slidingWindowLimiter } from "../../src/pluggy/transport.ts";
+import { createTransport, slidingWindowLimiter } from "../../src/pluggy/transport.ts";
+import { fakeFetch, json } from "../fakes/fake-fetch.ts";
 import { fixedClock } from "../fakes/fixed-clock.ts";
+import { fakeLogger } from "../fakes/fake-logger.ts";
 
 const NOW = new Date("2026-07-25T12:00:00.000Z");
 
@@ -38,5 +40,21 @@ describe("slidingWindowLimiter", () => {
     await limiter.acquire();
 
     assert.deepEqual(slept, []);
+  });
+});
+
+describe("createTransport", () => {
+  it("uses Pluggy's API URL when no base URL is configured", async () => {
+    const fetch = fakeFetch(() => json({ apiKey: "opaque-key" }));
+    const transport = createTransport({
+      credentials: { clientId: "client-id", clientSecret: "client-secret" },
+      clock: fixedClock(NOW),
+      fetch,
+      log: fakeLogger(),
+    });
+
+    await transport.key();
+
+    assert.equal(fetch.requests[0]?.url, "https://api.pluggy.ai/auth");
   });
 });
