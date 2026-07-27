@@ -5,7 +5,7 @@ import type { Bank, Connection } from "../core/contracts.ts";
 import { failureFor, parse, readJson, ResponseShapeError } from "./errors.ts";
 import { toAccount, toConnection, toTransaction } from "./mapper.ts";
 import { createTransport, type TransportOptions } from "./transport.ts";
-import { ACCOUNT, ACCOUNT_PAGE, CATEGORY_PAGE, ITEM, parseCategoryPage, TRANSACTION_PAGE } from "./wire.ts";
+import { ACCOUNT, ACCOUNT_PAGE, ITEM, TRANSACTION_PAGE } from "./wire.ts";
 
 export type PluggyClientOptions = TransportOptions;
 
@@ -45,21 +45,6 @@ function createTransactionWalker(get: Getter): (account: Account) => Promise<rea
   };
 }
 
-function createCategoryFetcher(get: Getter): () => Promise<ReturnType<typeof parseCategoryPage>> {
-  let categories: Promise<ReturnType<typeof parseCategoryPage>> | null = null;
-
-  return () => {
-    categories ??= get("/categories?pageSize=500&page=1", CATEGORY_PAGE, "categories")
-      .then((page) => parseCategoryPage(page))
-      .catch((error: unknown) => {
-        categories = null;
-        throw error;
-      });
-
-    return categories;
-  };
-}
-
 /**
  * The Pluggy client, written rather than taken from `pluggy-sdk`.
  *
@@ -86,7 +71,6 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
   }
 
   const walkTransactions = createTransactionWalker(get);
-  const fetchCategories = createCategoryFetcher(get);
 
   return {
     verifyCredentials: async () => {
@@ -125,6 +109,6 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
     },
 
     getTransactions: (account) => walkTransactions(account),
-    getCategories: () => fetchCategories(),
   };
 }
+

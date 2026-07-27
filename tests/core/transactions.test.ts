@@ -49,8 +49,12 @@ function readerFor(options: ReaderOptions = {}): ReaderFixture {
     bankOptions = { ...bankOptions, unreachable: options.unreachable };
   }
   const bank = fakeBank(bankOptions);
-  const store = createTransactionStore(openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" }));
+  const store = createTransactionStore(
+    openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" }),
+    fakeLogger(),
+  );
   let walkFails = options.walkFails === true;
+
 
   if (options.walkFails === true) {
     const originalGetTransactions = bank.getTransactions;

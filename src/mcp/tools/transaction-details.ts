@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import type { Transaction } from "../../core/transaction.ts";
+import type { DerivedTransaction } from "../../core/transaction.ts";
 import { toDecimal } from "../format.ts";
 import { configurationProblems, finishToolError, textResult, type ToolDeps } from "./result.ts";
 
@@ -93,7 +93,7 @@ function unavailableConnections(
   };
 }
 
-function rowForId(rows: ReadonlyMap<string, Transaction>, id: string): Transaction {
+function rowForId(rows: ReadonlyMap<string, DerivedTransaction>, id: string): DerivedTransaction {
   const row = rows.get(id);
   if (row === undefined) {
     throw new Error(`transaction ${id} disappeared during detail lookup`);
@@ -101,7 +101,7 @@ function rowForId(rows: ReadonlyMap<string, Transaction>, id: string): Transacti
   return row;
 }
 
-function formatDetail(row: Transaction): unknown {
+function formatDetail(row: DerivedTransaction): unknown {
   return {
     id: row.id,
     accountId: row.accountId,
@@ -114,6 +114,8 @@ function formatDetail(row: Transaction): unknown {
     amount: toDecimal(row.amountCents),
     currency: row.currency,
     original: formatOriginal(row),
+    category: row.category,
+    categorySrc: row.categorySrc,
     categoryId: row.categoryId,
     counterparty: formatCounterparty(row),
     paymentMethod: row.paymentMethod,
@@ -124,14 +126,14 @@ function formatDetail(row: Transaction): unknown {
   };
 }
 
-function formatOriginal(row: Transaction): { readonly amount: string; readonly currency: string } | undefined {
+function formatOriginal(row: DerivedTransaction): { readonly amount: string; readonly currency: string } | undefined {
   if (row.originalAmountCents === null || row.originalCurrency === null) {
     return undefined;
   }
   return { amount: toDecimal(row.originalAmountCents), currency: row.originalCurrency };
 }
 
-function formatCounterparty(row: Transaction): { readonly document?: string; readonly name?: string } | undefined {
+function formatCounterparty(row: DerivedTransaction): { readonly document?: string; readonly name?: string } | undefined {
   if (row.document === null && row.counterpartyName === null) {
     return undefined;
   }
@@ -145,7 +147,7 @@ function formatCounterparty(row: Transaction): { readonly document?: string; rea
   return details;
 }
 
-function formatInstalment(row: Transaction): { readonly number?: number; readonly total?: number } | undefined {
+function formatInstalment(row: DerivedTransaction): { readonly number?: number; readonly total?: number } | undefined {
   if (row.instalmentNumber === null && row.instalmentTotal === null) {
     return undefined;
   }

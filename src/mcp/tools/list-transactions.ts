@@ -2,17 +2,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { buildRollup } from "../../core/taxonomy.ts";
-import { isCategoryId } from "../../core/category.ts";
+import { isCategoryFilterValue } from "../../core/category.ts";
+
 import type { TransactionFilter } from "../../core/contracts.ts";
-import type { Transaction } from "../../core/transaction.ts";
+import type { DerivedTransaction } from "../../core/transaction.ts";
 import { decodeCursor, encodeCursor } from "../cursor.ts";
 import { toDecimal } from "../format.ts";
 import { configurationProblems, finishToolError, textResult, type ToolDeps } from "./result.ts";
 import { validateRange, validationMessage, toTransactionFilter } from "./transaction-input.ts";
 
 const dateInput = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "must be YYYY-MM-DD");
-const categoryInput = z.string().refine(isCategoryId, "must be a known category id");
+const categoryInput = z.string().refine(isCategoryFilterValue, 'must be a known category id, or "none" for uncategorized');
 const listTransactionsInput = z.object({
   startDate: dateInput,
   endDate: dateInput,
@@ -34,7 +34,9 @@ Use this tool when:
 - You need to inspect a page of matching transactions before requesting details.
 - You need to continue through a large result set with the returned cursor.
 
-Returns: Up to 100 transactions ordered newest first, with a cursor when more rows remain. The cursor belongs to the exact filters used for the request. If a connection is unavailable, available rows are returned with an explicit notice.`;
+- You need to find what has no category yet, by passing \`categories: ["none"]\`.
+
+Returns: Up to 100 transactions ordered newest first, with a cursor when more rows remain. Each row carries its category and \`categorySrc\`, which says where that category came from: \`override\` and \`counterparty\` are the user's own corrections, \`pluggy\` came from the bank data, and \`learned\` and \`mcc\` are inferred. The cursor belongs to the exact filters used for the request. If a connection is unavailable, available rows are returned with an explicit notice.`;
 
 export function registerListTransactions(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
@@ -82,8 +84,8 @@ async function executeListTransactions(options: ExecuteListOptions): Promise<Cal
       return finishToolError(log, startedAt, after.error, { outcome: "invalid-cursor" });
     }
     const rows = reader.query(addPage(filter, input.limit, after.position));
-    const taxonomy = buildRollup(await deps.source.bank.getCategories());
-    const response = formatListResponse({ rows, limit: input.limit, filter, taxonomy, unavailable: loaded.unavailable });
+    const response = formatListResponse({ rows, limit: input.limit, filter, unavailable: loaded.unavailable });
+
     log.info({ durationMs: Date.now() - startedAt, outcome: "ok", rows: rows.length }, "listTransactions finished");
     return textResult(response);
   } catch (error) {
@@ -113,10 +115,9 @@ function addPage(filter: TransactionFilter, limit: number, after: { readonly loc
 }
 
 type FormatListOptions = {
-  readonly rows: readonly Transaction[];
+  readonly rows: readonly DerivedTransaction[];
   readonly limit: number;
   readonly filter: TransactionFilter;
-  readonly taxonomy: ReadonlyMap<string, string>;
   readonly unavailable: readonly { readonly connectionId: string; readonly kind: string; readonly message: string }[];
 };
 
@@ -134,22 +135,21 @@ function formatListResponse(options: FormatListOptions): unknown {
     notice = `Some connections were unavailable: ${options.unavailable.map(({ connectionId }) => connectionId).join(", ")}.`;
   }
   return {
-    transactions: page.map((row) => formatListRow(row, options.taxonomy)),
+    transactions: page.map((row) => formatListRow(row)),
     cursor,
     notice,
   };
 }
 
-function formatListRow(row: Transaction, taxonomy: ReadonlyMap<string, string>): unknown {
-  let category: string | null = null;
-  if (row.categoryId !== null) {
-    const root = taxonomy.get(row.categoryId);
-    if (root === undefined) {
-      throw new Error(`category ${row.categoryId} is not in the fetched taxonomy`);
-    }
-    category = root;
-  }
-  return { id: row.id, date: row.localDate, descriptionNorm: row.descriptionNorm, amount: toDecimal(row.amountCents), category };
+function formatListRow(row: DerivedTransaction): unknown {
+  return {
+    id: row.id,
+    date: row.localDate,
+    descriptionNorm: row.descriptionNorm,
+    amount: toDecimal(row.amountCents),
+    category: row.category,
+    categorySrc: row.categorySrc,
+  };
 }
 
 function messageOf(error: unknown): string {

@@ -1,15 +1,8 @@
 import { isCategoryId, type CategoryId } from "./category.ts";
+import { TAXONOMY, type TaxonomyEntry } from "./taxonomy-tree.ts";
 
-/**
- * One node of Pluggy's category tree, reduced to what the roll-up needs.
- * `parentDescription` is carried only to match the wire shape and is never
- * read; `parentId` is the authoritative relationship.
- */
-export type TaxonomyEntry = {
-  readonly id: string;
-  readonly parentId: string | null;
-  readonly parentDescription?: string | null;
-};
+export type { TaxonomyEntry };
+
 
 function parentOf(id: string, parents: ReadonlyMap<string, string | null>): string | null {
   if (!parents.has(id)) {
@@ -68,3 +61,27 @@ export function buildRollup(entries: readonly TaxonomyEntry[]): ReadonlyMap<stri
 
   return rollup;
 }
+
+/**
+ * Built once at module load. `buildRollup` throws on a duplicate id, a missing
+ * parent, a cycle or a root that is not top-level — so a defect in the shipped
+ * constant fails the suite rather than a user's walk.
+ */
+const ROLLUP = buildRollup(TAXONOMY);
+
+/**
+ * The top-level ancestor of a Pluggy category id, or `null` when we do not know
+ * the id.
+ *
+ * Returning `null` rather than throwing is the whole point: the tree ships as
+ * code, so a category Pluggy adds tomorrow is absent by construction. An
+ * unknown leaf must cost that one row its group, not take a whole account's
+ * walk down with it (design D3).
+ */
+export function topCategoryOf(categoryId: string | null): CategoryId | null {
+  if (categoryId === null) {
+    return null;
+  }
+  return ROLLUP.get(categoryId) ?? null;
+}
+

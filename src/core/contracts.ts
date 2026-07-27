@@ -7,8 +7,10 @@
  */
 
 import type { Account } from "./account.ts";
-import type { TaxonomyEntry } from "./taxonomy.ts";
-import type { Transaction } from "./transaction.ts";
+import type { CategoryId } from "./category.ts";
+import type { DerivedTransaction, Transaction } from "./transaction.ts";
+
+
 
 /** Injectable time. Every freshness and expiry rule reads the clock (ADR §7). */
 export type Clock = {
@@ -97,16 +99,19 @@ export type Bank = {
   getAccount(accountId: string): Promise<Account>;
   /** Every transaction on one account, walked to the end of the cursor. */
   getTransactions(account: Account): Promise<readonly Transaction[]>;
-  /** Pluggy's category tree, cached per client. */
-  getCategories(): Promise<readonly TaxonomyEntry[]>;
 };
+
+
+/** A top-level category id, or the absence of one. */
+
+export type CategoryFilterValue = CategoryId | "none";
 
 /** What a cached transaction range is filtered by. */
 export type TransactionFilter = {
   readonly accountIds: readonly string[];
   readonly from: string;
   readonly to: string;
-  readonly categories?: readonly string[];
+  readonly categories?: readonly CategoryFilterValue[];
   readonly minAmountCents?: number;
   readonly maxAmountCents?: number;
   readonly accountType?: Account["type"];
@@ -125,8 +130,20 @@ export type TransactionStore = {
     rows: readonly Transaction[],
     lastUpdatedAt: string | null,
   ): number;
-  query(filter: TransactionFilter): readonly Transaction[];
-  byIds(ids: readonly string[]): readonly Transaction[];
+  query(filter: TransactionFilter): readonly DerivedTransaction[];
+  byIds(ids: readonly string[]): readonly DerivedTransaction[];
   /** The newest `local_date` at or before `today`, per connection. */
   dataThrough(accountIds: readonly string[], today: string): ReadonlyMap<string, string>;
 };
+
+/** The category writes `data.db` accepts. Both are retroactive by construction. */
+export type CategoryWriter = {
+  setCategory(ids: readonly string[], category: CategoryId): {
+    readonly updated: number;
+    readonly unknownIds: readonly string[];
+  };
+  /** `affected` counts cached rows that now resolve through this document. */
+  setCounterpartyCategory(document: string, category: CategoryId): { readonly affected: number };
+};
+
+

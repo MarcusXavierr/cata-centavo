@@ -1,7 +1,21 @@
+import { MCC_CATEGORIES } from "../core/mcc.ts";
+
 export type Migration = {
   readonly to: number;
   readonly up: string;
 };
+
+/**
+ * The MCC seed is generated from `src/core/mcc.ts` so the table has one source.
+ * Values are interpolated rather than bound because a migration's `up` is a
+ * script, not a statement — the inputs are a compile-time constant of integers
+ * and closed-list category ids, so there is no untrusted string here.
+ */
+function seedMccCategories(): string {
+  return MCC_CATEGORIES
+    .map((row) => `INSERT INTO mcc_categories (mcc, category, samples, agreeing) VALUES ('${row.mcc}', '${row.category}', ${row.samples}, ${row.agreeing});`)
+    .join("\n");
+}
 
 /**
  * Droppable: any mismatch is resolved by refetching from Pluggy (§10).
@@ -53,7 +67,49 @@ export const CACHE_MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    to: 2,
+    up: `
+      ALTER TABLE transactions ADD COLUMN top_category_id TEXT;
+      CREATE INDEX transactions_by_document ON transactions(document);
+
+      CREATE TABLE mcc_categories (
+        mcc TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        samples INTEGER NOT NULL,
+        agreeing INTEGER NOT NULL
+      );
+      ${seedMccCategories()}
+    `,
+  },
 ];
 
 /** Never dropped: overrides, rules and closing days live here (§10). */
-export const DATA_MIGRATIONS: readonly Migration[] = [];
+export const DATA_MIGRATIONS: readonly Migration[] = [
+  {
+    to: 1,
+    up: `
+      CREATE TABLE category_overrides (
+        transaction_id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE counterparty_categories (
+        document TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        samples INTEGER,
+        agreeing INTEGER,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE category_snapshot (
+        transaction_id TEXT PRIMARY KEY,
+        category_id TEXT NOT NULL,
+        top_category_id TEXT,
+        harvested_at TEXT NOT NULL
+      );
+    `,
+  },
+];

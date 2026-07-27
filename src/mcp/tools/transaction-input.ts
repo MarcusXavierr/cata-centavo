@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 import type { Account } from "../../core/account.ts";
-import { isCategoryId } from "../../core/category.ts";
+import { isCategoryFilterValue } from "../../core/category.ts";
 import type { TransactionFilter } from "../../core/contracts.ts";
 
 const dateInput = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "must be YYYY-MM-DD");
-const categoryInput = z.string().refine(isCategoryId, "must be a known category id");
+const categoryInput = z.string().refine(isCategoryFilterValue, 'must be a known category id, or "none" for uncategorized');
 
 export const listTransactionsInput = z.object({
   startDate: dateInput,

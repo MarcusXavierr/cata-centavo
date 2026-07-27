@@ -1,7 +1,7 @@
 import { collectAccounts, type UnavailableConnection } from "./accounts.ts";
 import type { Account } from "./account.ts";
 import type { Bank, BankFailure, Logger, TransactionFilter, TransactionStore } from "./contracts.ts";
-import type { Transaction } from "./transaction.ts";
+import type { DerivedTransaction } from "./transaction.ts";
 
 /** The reader's infrastructure dependencies, supplied by the composition root. */
 export type TransactionReaderOptions = {
@@ -20,8 +20,8 @@ export type LoadResult = {
 /** The read-through cache boundary used by MCP and CLI callers. */
 export type TransactionReader = {
   load(connectionIds: readonly string[]): Promise<LoadResult>;
-  query(filter: TransactionFilter): readonly Transaction[];
-  byIds(ids: readonly string[]): readonly Transaction[];
+  query(filter: TransactionFilter): readonly DerivedTransaction[];
+  byIds(ids: readonly string[]): readonly DerivedTransaction[];
   dataThrough(accountIds: readonly string[], today: string): ReadonlyMap<string, string>;
 };
 

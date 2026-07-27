@@ -29,7 +29,10 @@ describe("MCP server", () => {
       "getTransactions",
       "listTransactions",
       "getTransactionDetails",
+      "setCategory",
+      "setCounterpartyCategory",
     ]);
+
 
     await client.close();
     await server.close();

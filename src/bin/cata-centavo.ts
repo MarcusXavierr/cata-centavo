@@ -13,8 +13,10 @@ import type { Source } from "../mcp/source.ts";
 import { createTransactionReader } from "../core/transactions.ts";
 import { createPluggyClient } from "../pluggy/client.ts";
 import { toFailure } from "../pluggy/errors.ts";
+import { createCategoryWriter } from "../storage/categories.ts";
 import { createTransactionStore } from "../storage/transactions.ts";
 import { openDatabases, schemaVersion, type Databases } from "../storage/db.ts";
+
 
 const USAGE = `cata-centavo — Brazilian Open Finance over MCP
 
@@ -74,13 +76,14 @@ function prepareStorage(paths: ReturnType<typeof resolvePaths>): StorageInfo {
     return {
       cacheDb: paths.cacheDb,
       dataDb: paths.dataDb,
-      cacheVersion: schemaVersion(databases.cache),
-      dataVersion: schemaVersion(databases.data),
+      cacheVersion: schemaVersion(databases.db),
+      dataVersion: schemaVersion(databases.db, "userdata"),
     };
   } finally {
     databases.close();
   }
 }
+
 
 const sleep = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => {
@@ -92,12 +95,13 @@ function toSource(
   result: ReturnType<typeof loadConfig>,
   log: ReturnType<typeof createLogger>,
   reader?: ReturnType<typeof createTransactionReader>,
+  writer?: ReturnType<typeof createCategoryWriter>,
 ): Source {
   if (!result.ok) {
     return { ok: false, problems: result.problems };
   }
 
-  if (reader === undefined) {
+  if (reader === undefined || writer === undefined) {
     const problem = "Local transaction cache is unavailable.";
     return { ok: false, problems: [problem], databaseProblems: [problem] };
   }
@@ -114,8 +118,10 @@ function toSource(
     }),
     toFailure,
     reader,
+    writer,
   };
 }
+
 
 function describe(error: unknown): string {
   if (error instanceof Error) {
@@ -207,12 +213,15 @@ function createReadySource(
   });
   const reader = createTransactionReader({
     bank,
-    store: createTransactionStore(databases.cache),
+    store: createTransactionStore(databases.db, log),
     toFailure,
     log,
   });
-  return toSource(result, log, reader);
+  const writer = createCategoryWriter(databases.db, systemClock);
+
+  return toSource(result, log, reader, writer);
 }
+
 
 const invocation = resolveInvocation(process.argv.slice(2));
 

@@ -5,8 +5,9 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { after, describe, it } from "node:test";
 
-import { openDatabase, SchemaTooNewError, targetVersion } from "../../src/storage/db.ts";
-import { CACHE_MIGRATIONS, type Migration } from "../../src/storage/migrations.ts";
+import { openDatabase, openDatabases, schemaVersion, SchemaTooNewError, targetVersion } from "../../src/storage/db.ts";
+import { CACHE_MIGRATIONS, DATA_MIGRATIONS, type Migration } from "../../src/storage/migrations.ts";
+
 
 const V1: Migration = { to: 1, up: "CREATE TABLE note (id INTEGER PRIMARY KEY, body TEXT)" };
 const V2: Migration = { to: 2, up: "CREATE TABLE tag (id INTEGER PRIMARY KEY)" };
@@ -158,8 +159,33 @@ describe("the cache schema", () => {
     const db = openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" });
 
     // "transaction_sync" sorts before "transactions": _ is 0x5F, s is 0x73.
-    assert.deepEqual(tableNames(db), ["transaction_sync", "transactions"]);
+    assert.deepEqual(tableNames(db), ["mcc_categories", "transaction_sync", "transactions"]);
+
     assert.equal(userVersion(db), targetVersion(CACHE_MIGRATIONS));
     db.close();
   });
 });
+
+describe("openDatabases", () => {
+  it("opens cache.db as main and attaches data.db as userdata", () => {
+    const cacheDb = tempPath("cache.db");
+    const dataDb = tempPath("data.db");
+
+    const dbs = openDatabases({ cacheDb, dataDb, logFile: tempPath("app.log") });
+
+    assert.equal(schemaVersion(dbs.db), targetVersion(CACHE_MIGRATIONS));
+    assert.equal(schemaVersion(dbs.db, "userdata"), targetVersion(DATA_MIGRATIONS));
+
+    dbs.db.exec("CREATE TABLE main.cache_test (id INT)");
+    dbs.db.exec("CREATE TABLE userdata.data_test (id INT)");
+
+    const mainTables = dbs.db.prepare("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name = 'cache_test'").all();
+    const userTables = dbs.db.prepare("SELECT name FROM userdata.sqlite_master WHERE type = 'table' AND name = 'data_test'").all();
+
+    assert.equal(mainTables.length, 1);
+    assert.equal(userTables.length, 1);
+
+    dbs.close();
+  });
+});
+

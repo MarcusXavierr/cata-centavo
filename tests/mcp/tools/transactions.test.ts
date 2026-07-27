@@ -5,11 +5,12 @@ import type { Clock, TransactionFilter, TransactionStore } from "../../../src/co
 import type { TransactionReader } from "../../../src/core/transactions.ts";
 import { CATEGORIES } from "../../../src/core/category.ts";
 import { handleGetTransactions, handleListTransactions } from "../../../src/mcp/tools/transactions.ts";
+
 import type { ToolDeps } from "../../../src/mcp/tools/result.ts";
 import { fakeLogger } from "../../fakes/fake-logger.ts";
 import { fakeSource } from "../../fakes/fake-source.ts";
 import { account } from "../../fakes/fake-bank.ts";
-import { tx } from "../../fakes/transaction-builder.ts";
+import { derived, tx } from "../../fakes/transaction-builder.ts";
 
 const RANGE = { startDate: "2026-06-01", endDate: "2026-06-30" };
 
@@ -41,13 +42,14 @@ function recordingStore(rows: readonly ReturnType<typeof tx>[] = []): StoreFixtu
       if (filter.limit !== undefined) {
         selected = selected.slice(0, filter.limit);
       }
-      return selected;
+      return selected.map((row) => derived(row));
     },
     byIds: () => [],
     dataThrough: (accountIds) => new Map(accountIds.map((accountId) => [connectionFor(accountId), "2026-06-30"])),
   };
   return { store, filters };
 }
+
 
 function compareRows(left: ReturnType<typeof tx>, right: ReturnType<typeof tx>): number {
   const dateOrder = right.localDate.localeCompare(left.localDate);
@@ -99,14 +101,11 @@ function depsWith(options: DependencyOptions = {}): ToolDeps & { readonly filter
     byIds: (ids) => fixture.store.byIds(ids),
     dataThrough: (accountIds, today) => fixture.store.dataThrough(accountIds, today),
   };
-  if (options.categoriesDown) {
-    source.bank.getCategories = async () => {
-      throw new Error("category service unavailable");
-    };
-  }
   const clock = options.clock ?? { now: () => new Date("2026-07-01T12:00:00.000Z") };
-  return { source, reader, clock, log: fakeLogger(), filters: fixture.filters };
+  return { source, reader, writer: source.writer, clock, log: fakeLogger(), filters: fixture.filters };
 }
+
+
 
 function textOf(result: { readonly content: readonly { readonly type: string; readonly text?: string }[] }): string {
   const first = result.content[0];
@@ -129,6 +128,8 @@ describe("getTransactions", () => {
     { name: "startDate", input: RANGE, expected: { from: "2026-06-01" } },
     { name: "endDate", input: RANGE, expected: { to: "2026-06-30" } },
     { name: "categories", input: { ...RANGE, categories: ["11000000"] }, expected: { categories: ["11000000"] } },
+    { name: "the uncategorized filter", input: { ...RANGE, categories: ["none"] }, expected: { categories: ["none"] } },
+    { name: "a category mixed with none", input: { ...RANGE, categories: ["11000000", "none"] }, expected: { categories: ["11000000", "none"] } },
     { name: "minAmountCents", input: { ...RANGE, minAmountCents: -5_000 }, expected: { minAmountCents: -5_000 } },
     { name: "maxAmountCents", input: { ...RANGE, maxAmountCents: -100 }, expected: { maxAmountCents: -100 } },
     { name: "accountType", input: { ...RANGE, accountType: "CREDIT" }, expected: { accountType: "CREDIT" } },
@@ -154,6 +155,12 @@ describe("getTransactions", () => {
     assert.equal(result.isError, true);
   });
 
+  it("rejects a leaf category, which is not a filter vocabulary", async () => {
+    const result = await handleGetTransactions(depsWith(), { ...RANGE, categories: ["11010000"] });
+
+    assert.equal(result.isError, true);
+  });
+
   it("rejects an end date before the start date", async () => {
     const result = await handleGetTransactions(depsWith(), { startDate: "2026-06-30", endDate: "2026-06-01" });
 
@@ -171,8 +178,9 @@ describe("getTransactions", () => {
       deps: () => depsWith({ accounts: [account("acc-1"), account("acc-usd", { currency: "USD" })] }),
       matches: /USD/u,
     },
-    { name: "an unreachable category tree", deps: () => depsWith({ categoriesDown: true }), matches: /categor/iu },
   ];
+
+
 
   for (const { name, deps, matches } of REFUSAL_CASES) {
     it(`refuses rather than returning a partial total: ${name}`, async () => {
