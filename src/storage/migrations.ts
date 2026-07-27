@@ -118,4 +118,15 @@ export const DATA_MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    to: 2,
+    up: `
+      CREATE TABLE card_closing_day (
+        account_id TEXT PRIMARY KEY,
+        day INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];

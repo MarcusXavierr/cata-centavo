@@ -166,3 +166,16 @@ export type CategoryWriter = {
   /** `affected` counts cached rows that now resolve through this document. */
   setCounterpartyCategory(document: string, category: CategoryId): { readonly affected: number };
 };
+
+/** A user-provided billing-cycle closing day for one credit card. */
+export type ClosingDay = {
+  readonly accountId: string;
+  readonly day: number;
+};
+
+/** Local closing-day writes and reads the credit-card tools require. */
+export type ClosingDayStore = {
+  list(): readonly ClosingDay[];
+  set(accountId: string, day: number): void;
+  delete(accountId: string): number;
+};
