@@ -10,7 +10,10 @@ import { fakeLogger } from "./fake-logger.ts";
 
 import type { CategoryWriter } from "../../src/core/contracts.ts";
 
-export type FakeSourceOptions = Pick<FakeBankOptions, "accounts" | "connections" | "unreachable" | "transactions">;
+export type FakeSourceOptions = Pick<
+  FakeBankOptions,
+  "accounts" | "connections" | "unreachable" | "transactions" | "consents" | "unreachableConsent"
+>;
 
 export type FakeSource = Extract<Source, { readonly ok: true }> & {
   readonly bank: FakeBank;
@@ -39,20 +42,30 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     transactionFields = { ...transactionFields, transactions: options.transactions };
   }
 
+  let consentFields: Pick<FakeBankOptions, "consents"> = {};
+  if (options.consents !== undefined) {
+    consentFields = { ...consentFields, consents: options.consents };
+  }
 
+  let unreachableConsentFields: Pick<FakeBankOptions, "unreachableConsent"> = {};
+  if (options.unreachableConsent !== undefined) {
+    unreachableConsentFields = { ...unreachableConsentFields, unreachableConsent: options.unreachableConsent };
+  }
 
   const bank = fakeBank({
     connections,
     accounts,
     ...unreachableField,
     ...transactionFields,
+    ...consentFields,
+    ...unreachableConsentFields,
   });
   const store = createTransactionStore(
     openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" }),
     fakeLogger(),
   );
 
-  const reader = createTransactionReader({ bank, store, toFailure, log: fakeLogger() });
+  const reader = createTransactionReader({ bank, store, toFailure, log: fakeLogger(), clock: { now: () => new Date() } });
 
   return {
     ok: true,

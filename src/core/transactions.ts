@@ -1,6 +1,6 @@
 import { collectAccounts, type UnavailableConnection } from "./accounts.ts";
 import type { Account } from "./account.ts";
-import type { Bank, BankFailure, Logger, TransactionFilter, TransactionStore } from "./contracts.ts";
+import type { Bank, BankFailure, Clock, Logger, TransactionFilter, TransactionStore } from "./contracts.ts";
 import type { DerivedTransaction } from "./transaction.ts";
 
 /** The reader's infrastructure dependencies, supplied by the composition root. */
@@ -9,6 +9,7 @@ export type TransactionReaderOptions = {
   readonly store: TransactionStore;
   readonly toFailure: (error: unknown) => BankFailure;
   readonly log: Logger;
+  readonly clock: Clock;
 };
 
 /** Accounts and connection failures after freshness has been reconciled. */
@@ -30,7 +31,7 @@ export function createTransactionReader(options: TransactionReaderOptions): Tran
 
   return {
     load: async (connectionIds) => {
-      const collected = await collectAccounts(options.bank, connectionIds, options.toFailure);
+      const collected = await collectAccounts(options.bank, connectionIds, options.toFailure, options.clock);
       await Promise.all(collected.accounts.map((account) => walkIfStale(options, inFlight, account)));
       return collected;
     },

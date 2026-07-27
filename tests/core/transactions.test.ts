@@ -68,7 +68,7 @@ function readerFor(options: ReaderOptions = {}): ReaderFixture {
     };
   }
 
-  const reader = createTransactionReader({ bank, store, toFailure, log: fakeLogger() });
+  const reader = createTransactionReader({ bank, store, toFailure, log: fakeLogger(), clock: { now: () => new Date() } });
   const setLastUpdatedAt = (connectionId: string, value: string | null): void => {
     const matchingConnection = [firstConnection, secondConnection].find(({ id }) => id === connectionId);
     const matchingAccounts = accounts[connectionId] ?? [];

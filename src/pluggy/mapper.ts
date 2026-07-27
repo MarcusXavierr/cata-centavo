@@ -1,8 +1,8 @@
 import { ACCOUNT_TYPES, type Account, type CreditDetails } from "../core/account.ts";
-import type { Connection } from "../core/contracts.ts";
+import type { Connection, Consent } from "../core/contracts.ts";
 import { ResponseShapeError } from "./errors.ts";
 import { toCents } from "./money.ts";
-import type { WireAccount, WireItem } from "./wire.ts";
+import type { WireAccount, WireConsent, WireItem } from "./wire.ts";
 
 export { toCents } from "./money.ts";
 export { toTransaction } from "./transaction-mapper.ts";
@@ -30,7 +30,24 @@ export function toConnection(item: WireItem): Connection {
     lastUpdatedAt,
     parameter: item.parameter?.label ?? null,
     warnings: toWarnings(item.statusDetail),
+    failedLogins: item.consecutiveFailedLoginAttempts ?? null,
   };
+}
+
+/** The consent's own `itemId` never reaches this function; see `wire.ts`. */
+export function toConsent(consent: WireConsent): Consent {
+  return {
+    expiresAt: toNullableDate(consent.expiresAt),
+    revokedAt: toNullableDate(consent.revokedAt),
+    products: consent.products ?? [],
+  };
+}
+
+function toNullableDate(value: string | null | undefined): Date | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return new Date(value);
 }
 
 /** Maps Pluggy's account vocabulary and raw monetary values onto our domain. */

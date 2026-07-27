@@ -49,9 +49,39 @@ export const ITEM = z.object({
   /** Present when the institution is waiting on a human. */
   parameter: z.object({ name: z.string(), label: z.string() }).nullish(),
   statusDetail: STATUS_DETAIL,
+  consecutiveFailedLoginAttempts: z.number().nullish(),
 });
 
 export type WireItem = z.infer<typeof ITEM>;
+
+/**
+ * `GET /consents?itemId=` — the paged envelope of the consent behind one item.
+ *
+ * The consent's own `itemId` deliberately does not enter this schema.
+ * `docs/research/2026-07-26-phase-0-5-recon.md` §"`GET /consents?itemId=`
+ * returns a consent belonging to a different item" found it carries the UUID
+ * of the inner MeuPluggy item — a different one on each of the three
+ * connections observed, none matching a configured id. Reading it only
+ * creates the temptation to join a consent back to our connection by that
+ * field, which would silently produce zero matches. The only reliable
+ * association is "this is what the endpoint returned when asked about that
+ * item".
+ */
+export const CONSENT = z.object({
+  id: z.string().min(1),
+  expiresAt: z.string().nullish(),
+  revokedAt: z.string().nullish(),
+  products: z.array(z.string()).nullish(),
+});
+
+export const CONSENT_PAGE = z.object({
+  results: z.array(CONSENT),
+  total: z.number(),
+  totalPages: z.number(),
+  page: z.number(),
+});
+
+export type WireConsent = z.infer<typeof CONSENT>;
 
 export const ACCOUNT = z.object({
   id: z.string().min(1),

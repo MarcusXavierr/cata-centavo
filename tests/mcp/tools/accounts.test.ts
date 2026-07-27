@@ -190,6 +190,40 @@ describe("MCP account tools", () => {
     assert.equal("usedCredit" in bank, false);
   });
 
+  it("errors when every configured connection is unavailable and no accounts came back", async () => {
+    const source = fakeSource({
+      accounts: { "conn-1": [], "conn-2": [], "conn-3": [] },
+      unreachable: { "conn-2": new Error("Nubank is unavailable") },
+    });
+
+    const result = await handleGetAccounts(deps(source, log));
+
+    assert.equal(result.isError, true);
+    assert.match(message(result), /conn-1/);
+    assert.match(message(result), /conn-2/);
+    assert.match(message(result), /conn-3/);
+  });
+
+  it("stays an ordinary result when one connection is alive and another is unavailable", async () => {
+    const source = fakeSource({ unreachable: { "conn-2": new Error("Nubank is unavailable") } });
+
+    const result = await handleGetAccounts(deps(source, log));
+
+    assert.equal(result.isError, undefined);
+    const parsed = payload(result) as { accounts: unknown[]; unavailable: unknown[] };
+    assert.ok(parsed.accounts.length > 0);
+    assert.equal(parsed.unavailable.length, 1);
+  });
+
+  it("stays an ordinary result when zero connections are configured and none are unavailable", async () => {
+    const source = fakeSource({ connections: [], accounts: {} });
+
+    const result = await handleGetAccounts(deps(source, log));
+
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(payload(result), { accounts: [], unavailable: [] });
+  });
+
   it("reports the config problems when the source is broken", async () => {
     const result = await handleGetAccounts(
       deps({ ok: false, problems: ["PLUGGY_CLIENT_SECRET is missing or empty."] }, log),

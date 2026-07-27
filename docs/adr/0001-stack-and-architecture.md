@@ -784,7 +784,7 @@ It **mitigates pitfall #7** (revoked consent returns empty data, not an error) o
 | `setCategory` | V1 | local state only | low |
 | `setCounterpartyCategory` | V1 | local state only | low |
 | ~~`manualUpdate`~~ | — | **removed 2026-07-26** — connector 200 refuses `PATCH /items/{id}` (§14.5) | — |
-| `listSources` | V1 | local + item/consent status | trivial |
+| `listSources` | **shipped 2026-07-27** | `core/diagnose.ts` — `GET /items/{id}` + `GET /consents?itemId=`, independently | low |
 | `addRule` | V2 | local state only | medium |
 | `listRules` | V2 | local state only | low |
 | `deleteRule` | V2 | local state only | trivial |
@@ -925,6 +925,12 @@ Ships `setCategory`, `setCounterpartyCategory`, the `mcc_categories` seed table,
 
 > **Amendment, 2026-07-26 — `manualUpdate` did not go anywhere; it is deleted.** The amendment above moved it to Phase 0, and connector 200's refusal then removed it altogether (§14.5). Nothing about it comes back to this phase. **What is left here is `listSources` and pitfall #7**, and the pitfall is now the whole of the phase's value: an empty response has to be checked against consent and fail loudly rather than report "no transactions". §16.4's error split is still owed, by the tools that remain rather than by this one — and the recon adds a constraint to `listSources` itself: `GET /consents?itemId=` returns a consent whose own `itemId` field is a *different* UUID from the one queried, on all three connections, so the consent cannot be joined back to our connection by its id. The only reliable association is "this is what the endpoint returned when asked about that item".
 
+> **Amendment, 2026-07-27 — Phase 5 ships.** `core/consent.ts` holds the verdict as a pure function of a `Consent | null` and the clock — `active`, `revoked`, `expired` or `unknown`, with `revoked` outranking `expired` when both apply and `null` mapping to `unknown` rather than to a guessed `revoked`. `collectAccounts` calls it only when a connection answers with zero accounts, replacing the old guess ("revoked consent is the usual cause") with a real check; a consent lookup that itself fails falls back to the same `no-accounts` result rather than turning a mild diagnostic into a crash. `core/diagnose.ts` is the one function both `listSources` and `doctor` (Phase 7) read: it fans out `getConnection` and `getConsent` per connection, independently, so a broken consent lookup does not take the item status with it and the reverse holds too.
+>
+> Two inversions worth recording, because they read as contradictions if found separately. `getAccounts` now returns `isError` when zero accounts came back in total *and* at least one connection was unavailable — for any failure kind, not only consent, since restricting it to consent would leave "credentials refused everywhere" reporting a balance of zero. `listSources`, reading the same `core/diagnose.ts`, never does: for it a broken connection *is* the diagnosis the agent came for, and erroring at the moment everything is rotten would hide the very thing the tool exists to surface. One function, two opposite loudness rules, both correct for what calls them.
+>
+> Untouched, as designed: the consent's own `itemId` field never entered `wire.ts`, and the shape of a *revoked* consent is still unobserved — every test here proves the rule against a hand-written fixture, not against a real revocation Pluggy has sent.
+
 ### Phase 6 — Installments
 
 `getInstallments`, last, with real data in hand (§14.2).
@@ -932,6 +938,14 @@ Ships `setCategory`, `setCounterpartyCategory`, the `mcc_categories` seed table,
 ### Phase 7 — `doctor` and the README
 
 `doctor` as specified in §14.6. The README is a deliverable of this phase, not an afterthought (§1), and it must state the security posture explicitly (§9).
+
+> **Amendment, 2026-07-27 — Phase 7 ships.** `storage/diagnostics.ts` reads schema versions, per-connection cache coverage and the three categorization table counts off `transaction_sync`, `transactions` and `userdata`, including the two database file paths straight from the open connection via `PRAGMA database_list` rather than threading them through as a separate parameter. An empty database reads as zeroes and `null`, never a throw — `doctor` runs precisely when things are broken, and a diagnostic that cannot survive a fresh install would be worse than useless. `cli/doctor.ts` renders that alongside `core/diagnose.ts`'s per-connection report as four stderr blocks — connections, storage, cache, categorization — plus a summary line, and reuses `describeSync` (now extracted to `cli/sync.ts` so `init` and `doctor` cannot drift apart on what "synced 3h ago" means).
+>
+> The second inversion of this pair of phases: a stale sync — `status: UPDATED` with nothing in the item payload explaining why it stopped — is a warning line and exits `0`. Nothing distinguishes "not scheduled yet" from "will never sync again" (§11), and failing on a condition neither this project nor the user can diagnose would be worse than reporting it plainly. Only a revoked or expired consent, a connection that could not be read at all, refused credentials, or unreadable storage exit non-zero.
+>
+> The README is a rewrite, not a patch. It names all nine tools shipped so far by intent rather than by module, describes the four credit-card tools on the parallel branch the same way — capability only, no parameters — so nothing here can drift out of sync with a signature this branch has never run, and states the §9 security posture and the pitfall #8 limit as facts rather than leaving them assumed.
+
+> **Amendment, 2026-07-27 — mutation testing could not be run to completion.** `core/` and `pluggy/` both changed, which is the trigger this section names. Three attempts — default concurrency, `--concurrency 1` against a freshly rebuilt incremental cache, and `--concurrency 2` with `coverageAnalysis: all` in place of `perTest` — each hung during Stryker's dry run, past instrumentation and into "Creating N test runner process(es)", with no mutant ever executed. `npm run typecheck`, `lint`, `deps` and `test` all stayed green throughout (607 tests) under the same Node 24 runtime, so this reads as an environment interaction specific to this machine's Stryker invocation rather than a defect in the code the mutation run would have exercised. Worth a retry in a clean environment before the next `core/`- or `pluggy/`-touching change; §"Code quality process" already says mutation testing never fails the build, and it does not block this one either.
 
 ### V2 — Rules
 

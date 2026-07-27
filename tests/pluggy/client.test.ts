@@ -55,6 +55,21 @@ function accountPage(page: number, totalPages: number, results: readonly unknown
   return { total: results.length * totalPages, totalPages, page, results };
 }
 
+function consentBody(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    id: "consent-1",
+    itemId: "inner-item-id-does-not-match",
+    expiresAt: null,
+    revokedAt: null,
+    products: ["ACCOUNTS", "CREDIT_CARDS"],
+    ...overrides,
+  };
+}
+
+function consentPage(results: readonly unknown[]): unknown {
+  return { total: results.length, totalPages: 1, page: 1, results };
+}
+
 function isAuth(request: { url: string }): boolean {
   return request.url.endsWith("/auth");
 }
@@ -276,6 +291,7 @@ describe("createPluggyClient", () => {
       lastUpdatedAt: new Date("2026-07-25T09:00:00.000Z"),
       parameter: null,
       warnings: [],
+      failedLogins: 0,
     });
   });
 
@@ -953,5 +969,87 @@ describe("createPluggyClient", () => {
 
     assert.equal((await client.getConnection(ID)).id, ID);
     assert.deepEqual(slept, [1_000]);
+  });
+
+  it("requests the consent by itemId", async () => {
+    const { client, fetch } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(consentPage([consentBody()]));
+    });
+
+    await client.getConsent(ID);
+
+    const consentRequest = fetch.requests.find((request) => new URL(request.url).pathname === "/consents");
+    assert.ok(consentRequest);
+    assert.equal(new URL(consentRequest.url).searchParams.get("itemId"), ID);
+  });
+
+  it("returns null when the consent list is empty", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(consentPage([]));
+    });
+
+    assert.equal(await client.getConsent(ID), null);
+  });
+
+  it("maps the first consent, dropping the itemId that belongs to a different item", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(
+        consentPage([
+          consentBody({ expiresAt: "2026-08-01T00:00:00.000Z", revokedAt: null, products: ["ACCOUNTS"] }),
+        ]),
+      );
+    });
+
+    assert.deepEqual(await client.getConsent(ID), {
+      expiresAt: new Date("2026-08-01T00:00:00.000Z"),
+      revokedAt: null,
+      products: ["ACCOUNTS"],
+    });
+  });
+
+  it("carries a revoked consent's date rather than dropping it", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(consentPage([consentBody({ revokedAt: "2026-07-20T00:00:00.000Z" })]));
+    });
+
+    const consent = await client.getConsent(ID);
+
+    assert.deepEqual(consent?.revokedAt, new Date("2026-07-20T00:00:00.000Z"));
+  });
+
+  it("reads consecutiveFailedLoginAttempts into Connection.failedLogins", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json(itemBody(ID, { consecutiveFailedLoginAttempts: 3 }));
+    });
+
+    assert.equal((await client.getConnection(ID)).failedLogins, 3);
+  });
+
+  it("reports failedLogins as null when the field is absent from the body", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      const body = itemBody(ID) as Record<string, unknown>;
+      delete body["consecutiveFailedLoginAttempts"];
+      return json(body);
+    });
+
+    assert.equal((await client.getConnection(ID)).failedLogins, null);
   });
 });

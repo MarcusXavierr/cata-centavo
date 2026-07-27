@@ -1,5 +1,6 @@
 import { loadConfig, type Credentials, type Env } from "../config.ts";
 import type { Bank, Clock, Connection } from "../core/contracts.ts";
+import { describeSync } from "./sync.ts";
 
 /**
  * `init` validates and reports. It writes nothing locally, because configuration
@@ -170,26 +171,6 @@ function waitingOn(parameter: string | null): string {
     return "";
   }
   return ` — the bank is waiting on you: ${parameter}`;
-}
-
-function describeSync(lastUpdatedAt: Date | null, now: Date): string {
-  if (lastUpdatedAt === null) {
-    return "never synced";
-  }
-
-  const minutes = Math.floor((now.getTime() - lastUpdatedAt.getTime()) / 60_000);
-  if (minutes < 1) {
-    return "synced just now";
-  }
-  if (minutes < 60) {
-    return `synced ${minutes}m ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) {
-    return `synced ${hours}h ago`;
-  }
-  return `synced ${Math.floor(hours / 24)}d ago`;
 }
 
 function describe(error: unknown): string {

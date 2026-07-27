@@ -33,7 +33,7 @@ export async function handleGetBalance(deps: ToolDeps): Promise<CallToolResult> 
     return finishToolError(log, startedAt, configurationProblems(deps.source.problems), { problems: deps.source.problems.length });
   }
 
-  const collected = await collectAccounts(deps.source.bank, deps.source.connections, deps.source.toFailure);
+  const collected = await collectAccounts(deps.source.bank, deps.source.connections, deps.source.toFailure, deps.clock);
   if (collected.unavailable.length > 0) {
     logUnavailableConnections(log, collected.accounts.length, collected.unavailable);
 
