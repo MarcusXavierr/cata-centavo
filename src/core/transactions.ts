@@ -23,6 +23,7 @@ export type TransactionReader = {
   load(connectionIds: readonly string[]): Promise<LoadResult>;
   query(filter: TransactionFilter): readonly DerivedTransaction[];
   byIds(ids: readonly string[]): readonly DerivedTransaction[];
+  cardRows(accountId: string): readonly DerivedTransaction[];
   dataThrough(accountIds: readonly string[], today: string): ReadonlyMap<string, string>;
 };
 
@@ -37,6 +38,7 @@ export function createTransactionReader(options: TransactionReaderOptions): Tran
     },
     query: (filter) => options.store.query(filter),
     byIds: (ids) => options.store.byIds(ids),
+    cardRows: (accountId) => options.store.cardRows(accountId),
     dataThrough: (accountIds, today) => options.store.dataThrough(accountIds, today),
   };
 }

@@ -202,6 +202,19 @@ describe("byIds", () => {
   });
 });
 
+describe("cardRows", () => {
+  it("returns rows outside any date window, ordered oldest first", () => {
+    const store = storeFor();
+    store.replaceAccount("card-1", "conn-1", [
+      tx({ id: "future", accountId: "card-1", localDate: "2026-11-25" }),
+      tx({ id: "past", accountId: "card-1", localDate: "2025-07-31" }),
+    ], null);
+    store.replaceAccount("card-2", "conn-1", [tx({ id: "other", accountId: "card-2" })], null);
+
+    assert.deepEqual(idsOf(store.cardRows("card-1")), ["past", "future"]);
+  });
+});
+
 describe("dataThrough", () => {
   it("reports where the data stops, ignoring future instalments", () => {
     const store = storeFor();

@@ -15,6 +15,7 @@ function depsWith(rows: readonly ReturnType<typeof derived>[]): ToolDeps {
     load: async () => ({ accounts: [account("acc-1")], unavailable: [] }),
     query: () => [],
     byIds: (ids) => rows.filter((row) => ids.includes(row.id)),
+    cardRows: () => [],
     dataThrough: () => new Map(),
   };
   return { source, reader, writer: source.writer, clock: { now: () => new Date("2026-07-01T12:00:00.000Z") }, log: fakeLogger() };

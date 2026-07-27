@@ -71,6 +71,7 @@ export function createTransactionStore(db: DatabaseSync, log: Logger, clock: Clo
     },
     query: (filter) => queryTransactions(db, filter),
     byIds: (ids) => findByIds(db, ids),
+    cardRows: (accountId) => findCardRows(db, accountId),
     dataThrough: (accountIds, today) => readDataThrough(db, accountIds, today),
   };
 }
@@ -227,6 +228,16 @@ function findByIds(db: DatabaseSync, ids: readonly string[]): readonly DerivedTr
     WHERE t.id IN (${placeholders(ids.length)})
   ) SELECT * FROM derived ORDER BY local_date DESC, id DESC`;
   const rows = db.prepare(sql).all(...ids) as Record<string, unknown>[];
+  return rows.map((row) => rowToDerived(row));
+}
+
+function findCardRows(db: DatabaseSync, accountId: string): readonly DerivedTransaction[] {
+  const sql = `WITH derived AS (
+    SELECT t.${TRANSACTION_COLUMNS.join(", t.")}, ${DERIVED_COLUMNS}
+    FROM transactions t
+    WHERE t.account_id = ?
+  ) SELECT * FROM derived ORDER BY local_date, id`;
+  const rows = db.prepare(sql).all(accountId) as Record<string, unknown>[];
   return rows.map((row) => rowToDerived(row));
 }
 

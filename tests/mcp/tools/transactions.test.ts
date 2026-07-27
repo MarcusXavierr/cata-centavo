@@ -45,6 +45,7 @@ function recordingStore(rows: readonly ReturnType<typeof tx>[] = []): StoreFixtu
       return selected.map((row) => derived(row));
     },
     byIds: () => [],
+    cardRows: () => [],
     dataThrough: (accountIds) => new Map(accountIds.map((accountId) => [connectionFor(accountId), "2026-06-30"])),
   };
   return { store, filters };
@@ -100,6 +101,7 @@ function depsWith(options: DependencyOptions = {}): ToolDeps & { readonly filter
     load: async () => loadResult,
     query: (filter) => fixture.store.query(filter),
     byIds: (ids) => fixture.store.byIds(ids),
+    cardRows: (accountId) => fixture.store.cardRows(accountId),
     dataThrough: (accountIds, today) => fixture.store.dataThrough(accountIds, today),
   };
   const clock = options.clock ?? { now: () => new Date("2026-07-01T12:00:00.000Z") };

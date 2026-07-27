@@ -148,6 +148,11 @@ export type TransactionStore = {
   ): number;
   query(filter: TransactionFilter): readonly DerivedTransaction[];
   byIds(ids: readonly string[]): readonly DerivedTransaction[];
+  /**
+   * Every cached row for one card, unbounded by date. The bill derivation needs
+   * future-dated instalments and closed-cycle history, neither of which a range filter can express.
+   */
+  cardRows(accountId: string): readonly DerivedTransaction[];
   /** The newest `local_date` at or before `today`, per connection. */
   dataThrough(accountIds: readonly string[], today: string): ReadonlyMap<string, string>;
 };
@@ -161,4 +166,3 @@ export type CategoryWriter = {
   /** `affected` counts cached rows that now resolve through this document. */
   setCounterpartyCategory(document: string, category: CategoryId): { readonly affected: number };
 };
-
