@@ -1,6 +1,8 @@
-# cata-centavo
 
-`cata-centavo` is an MCP server that reads your Brazilian bank and credit card data through Pluggy's Open Finance connections, so an agent can answer questions about your own money. It also keeps a few local corrections for how transactions get categorized. It is for someone who already has a Pluggy account with banks linked in MeuPluggy — not a hosted product, not multi-user, just a server you run against your own credentials.
+<img width="375" height="375" alt="logo" src="https://github.com/user-attachments/assets/e990ea13-b266-4def-917f-afc15c1b4275" />
+
+
+Cata-centavo is an MCP server that reads your Brazilian bank and credit card data through Pluggy's Open Finance connections, so an agent can answer questions about your own money. It also keeps a few local corrections for how transactions get categorized. It is for someone who already has a Pluggy account with banks linked in MeuPluggy — not a hosted product, not multi-user, just a server you run against your own credentials.
 
 ## What it does
 
@@ -85,10 +87,3 @@ Ask the agent to show you what is uncategorized and tell it what those merchants
 - Freshness is Pluggy's schedule, not this server's. There is no "sync now": on-demand refresh is refused outright. One of the author's own three connections went three days without syncing while still reporting itself up to date, with nothing in the response explaining why.
 - A credit card's `usedCredit` figure is not what the card owes this month. It mixes the current billing cycle with instalments that have not been charged yet, and will not match what a banking app shows.
 
-## Security
-
-- Credentials come only from the environment and are never written to disk. There is no config file and no key file.
-- `cache.db` and `data.db` are plaintext SQLite, mode `0600`. Encrypting the credential while the full financial history sits in plaintext right next to it would be theatre — and `node:sqlite` has no SQLCipher to encrypt the database itself either way.
-- Anyone who can read files as your user — or as root — has your complete financial history. `0600` stops a second unprivileged account on the same machine, and nothing else.
-- No OS keychain, deliberately: it would cost a native module and a per-platform build matrix.
-- `CATA_CENTAVO_LOG_LEVEL=debug` writes financial data into the log file.
