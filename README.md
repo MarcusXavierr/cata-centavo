@@ -72,17 +72,21 @@ You need Node 22.13 or newer, and a Pluggy account with your banks already conne
 
 The bank data comes from [Pluggy](https://pluggy.ai), the Open Finance provider that does the talking to the banks. Cata-centavo only reads connections that already exist, so make them first.
 
-Connect your banks in MeuPluggy and link them to an application:
 
-<!-- Screenshot 1 of 3: MeuPluggy connected to a Pluggy application. Drag the PNG into a new GitHub issue, copy the user-attachments URL and paste it as an <img> here. -->
 
-Copy the client id and the client secret from that application:
+1. At [MeuPluggy](https://meu.pluggy.ai/en) create your account and connect to your banks
+<img width="1530" height="617" alt="image" src="https://github.com/user-attachments/assets/15bde1c7-dfd9-4f9e-9f6b-e254522afd58" />
 
-<!-- Screenshot 2 of 3: where the client id and client secret live in the dashboard. -->
+2. Then go to the other [Plug portal](https://pluggy.ai/) login and connect your MeuPlug accounts to the Demo app. Also copy your `PLUGGY_CLIENT_ID` and `PLUGGY_CLIENT_SECRET` from this page
+<img width="1918" height="595" alt="image" src="https://github.com/user-attachments/assets/be7670e9-35fc-4ea3-98d3-115298cd488f" />
 
-Copy the ids of the connections you want the agent to see:
+3. Then connect your MeuPluggy accounts, one by one into the Demo App 
+<img width="1206" height="813" alt="image" src="https://github.com/user-attachments/assets/66402550-ebeb-43ba-962b-3d091242e807" />
 
-<!-- Screenshot 3 of 3: where the connection ids are listed. -->
+
+4. And then copy the `PLUGGY_ITEM_IDS` one by one
+<img width="1851" height="627" alt="image" src="https://github.com/user-attachments/assets/16fc1d2a-39b2-4531-9ae6-487ade128006" />
+
 
 That gives you three values, all required:
 
@@ -92,7 +96,12 @@ PLUGGY_CLIENT_SECRET    from your Pluggy dashboard
 PLUGGY_ITEM_IDS         connection ids, separated by commas
 ```
 
-The plain way is to export them in your `.zshrc` or `.bashrc`. That leaves your keys in a file every shell reads. If you would rather not, `secret-tool` keeps them in your keyring and a small wrapper script can pull them out right before the server starts. Setups differ enough that it is worth pointing your agent at this page and asking it which one fits your machine.
+The plain way is to export them in your `.zshrc` or `.bashrc`, and on MCP configuration file put like `"PLUGGY_CLIENT_ID": "${PLUGGY_CLIENT_ID}"`. That leaves your keys in a file every shell reads. If you would rather not, `secret-tool` keeps them in your keyring and a small wrapper script can pull them out right before the server starts. Setups differ enough that it is worth pointing your agent at this page and asking it which one fits your machine.
+
+After configuring this, run `npx cata-centavo doctor` to validate your environment variables are working fine 
+
+<img width="894" height="191" alt="image" src="https://github.com/user-attachments/assets/adc2bb35-a161-4241-a33a-42846aa507a1" />
+
 
 ### Adding it to Claude Code
 
