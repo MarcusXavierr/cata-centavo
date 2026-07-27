@@ -43,6 +43,13 @@ export type BillRowPartition = {
   readonly futureRows: readonly DerivedTransaction[];
 };
 
+export type BillCommitment = {
+  readonly materializedCents: number;
+  readonly impliedCents: number;
+  readonly futureCents: number;
+  readonly committedCents: number;
+};
+
 /** Sums posted rows in bill sign, where a purchase increases the amount due. */
 export function derivePostedCents(rows: readonly DerivedTransaction[]): number {
   let postedCents = 0;
@@ -53,6 +60,33 @@ export function derivePostedCents(rows: readonly DerivedTransaction[]): number {
     postedCents -= row.amountCents;
   }
   return postedCents;
+}
+
+/**
+ * Derives future instalments from explicit rows and each open-cycle position.
+ * Only the larger total is subtracted from utilized credit.
+ */
+export function deriveBillCommitment(partition: BillRowPartition, utilizationCents: number): BillCommitment {
+  let materializedCents = 0;
+  for (const row of partition.futureRows) {
+    materializedCents -= row.amountCents;
+  }
+
+  let impliedCents = 0;
+  for (const row of partition.openCycleRows) {
+    if (row.instalmentNumber === null || row.instalmentTotal === null) {
+      continue;
+    }
+    impliedCents -= row.amountCents * (row.instalmentTotal - row.instalmentNumber);
+  }
+
+  const futureCents = Math.max(materializedCents, impliedCents);
+  return {
+    materializedCents,
+    impliedCents,
+    futureCents,
+    committedCents: utilizationCents - futureCents,
+  };
 }
 
 const MONTH_LENGTHS: Readonly<Record<number, number>> = {

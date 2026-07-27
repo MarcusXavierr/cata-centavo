@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  deriveBillCommitment,
   derivePostedCents,
   identifyOpenCycle,
   partitionBillRows,
@@ -11,6 +12,8 @@ import { todayIn } from "../../src/core/date.ts";
 import type { DerivedTransaction } from "../../src/core/transaction.ts";
 import { bill, billFixture, type BillFixture } from "../fakes/bill-builder.ts";
 import { derived } from "../fakes/transaction-builder.ts";
+import { materializingCard } from "../fixtures/materializing-card.ts";
+import { onePerBillCard } from "../fixtures/one-per-bill-card.ts";
 
 const CYCLE_CASES: readonly {
   readonly name: string;
@@ -124,6 +127,44 @@ const POSTED_CASES: readonly {
   },
 ];
 
+const FUTURE_CASES: readonly {
+  readonly name: string;
+  readonly rows: readonly DerivedTransaction[];
+  readonly materializedCents: number;
+  readonly impliedCents: number;
+  readonly futureCents: number;
+}[] = [
+  {
+    name: "a fully materialized plan is counted from its future rows",
+    rows: materializingCard.rows,
+    materializedCents: 4_000,
+    impliedCents: 4_000,
+    futureCents: 4_000,
+  },
+  {
+    name: "a one-per-bill plan is counted from the open-cycle row's own position",
+    rows: onePerBillCard.rows.filter((row) => row.id === "one-per-bill-open"),
+    materializedCents: 0,
+    impliedCents: 2_000,
+    futureCents: 2_000,
+  },
+  {
+    name: "a plan that is both materialized and open-cycle is counted once, not twice",
+    rows: onePerBillCard.rows.filter((row) =>
+      row.id === "one-per-bill-open" || row.id === "one-per-bill-sentinel"),
+    materializedCents: 2_000,
+    impliedCents: 2_000,
+    futureCents: 2_000,
+  },
+  {
+    name: "a card with no instalments at all has no future",
+    rows: [derived({ accountType: "CREDIT", amountCents: -3_000 })],
+    materializedCents: 0,
+    impliedCents: 0,
+    futureCents: 0,
+  },
+];
+
 describe("identifyOpenCycle", () => {
   for (const { name, fixture, expected } of CYCLE_CASES) {
     it(name, () => {
@@ -157,4 +198,27 @@ describe("derivePostedCents", () => {
       assert.equal(derivePostedCents(rows), postedCents);
     });
   }
+});
+
+describe("deriveBillCommitment", () => {
+  for (const { name, rows, materializedCents, impliedCents, futureCents } of FUTURE_CASES) {
+    it(name, () => {
+      const partition = partitionBillRows(rows, "2026-08", null);
+      const actual = deriveBillCommitment(partition, 10_000);
+
+      assert.deepEqual(actual, {
+        materializedCents,
+        impliedCents,
+        futureCents,
+        committedCents: 10_000 - futureCents,
+      });
+    });
+  }
+
+  it("reports a negative committed rather than clamping it to zero", () => {
+    const sentinelRow = onePerBillCard.rows.filter((row) => row.id === "one-per-bill-sentinel");
+    const partition = partitionBillRows(sentinelRow, "2026-08", null);
+
+    assert.equal(deriveBillCommitment(partition, 1_000).committedCents, -1_000);
+  });
 });
