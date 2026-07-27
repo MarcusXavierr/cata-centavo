@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { identifyOpenCycle, type ClosingDateSource } from "../../src/core/bill.ts";
+import { identifyOpenCycle, partitionBillRows, type ClosingDateSource } from "../../src/core/bill.ts";
 import { todayIn } from "../../src/core/date.ts";
+import type { DerivedTransaction } from "../../src/core/transaction.ts";
 import { bill, billFixture, type BillFixture } from "../fakes/bill-builder.ts";
+import { derived } from "../fakes/transaction-builder.ts";
 
 const CYCLE_CASES: readonly {
   readonly name: string;
@@ -57,6 +59,30 @@ const CYCLE_CASES: readonly {
   },
 ];
 
+const MEMBERSHIP_CASES: readonly {
+  readonly name: string;
+  readonly openBillId: string | null;
+  readonly row: DerivedTransaction;
+  readonly expected: "open" | "future" | "neither";
+}[] = [
+  { name: "a row carrying the open bill's own id is in the open cycle",
+    openBillId: "open-bill", row: derived({ billId: "open-bill", billForecastDate: null }), expected: "open" },
+  { name: "a row carrying a closed bill's id is in neither bucket",
+    openBillId: "open-bill", row: derived({ billId: "closed-bill" }), expected: "neither" },
+  { name: "with no open bill in the list, any billed row is in neither bucket",
+    openBillId: null, row: derived({ billId: "closed-bill" }), expected: "neither" },
+  { name: "an unbilled row forecast to the open cycle is in the open cycle",
+    openBillId: null, row: derived({ billId: null, billForecastDate: "2026-08" }), expected: "open" },
+  { name: "an unbilled row forecast to a past cycle is still in the open cycle",
+    openBillId: null, row: derived({ billId: null, billForecastDate: "2026-07" }), expected: "open" },
+  { name: "an unbilled row forecast beyond the open cycle is future",
+    openBillId: null, row: derived({ billId: null, billForecastDate: "2026-09" }), expected: "future" },
+  { name: "the unassigned-cycle sentinel is future, not January of year one",
+    openBillId: null, row: derived({ billId: null, billForecastDate: "0001-01" }), expected: "future" },
+  { name: "an unbilled row with no forecast at all falls to the open cycle",
+    openBillId: null, row: derived({ billId: null, billForecastDate: null }), expected: "open" },
+];
+
 describe("identifyOpenCycle", () => {
   for (const { name, fixture, expected } of CYCLE_CASES) {
     it(name, () => {
@@ -64,6 +90,22 @@ describe("identifyOpenCycle", () => {
         identifyOpenCycle(fixture.bills, fixture.storedDay, fixture.balanceDueDate, todayIn(fixture.clock)),
         expected,
       );
+    });
+  }
+});
+
+describe("partitionBillRows", () => {
+  for (const { name, openBillId, row, expected } of MEMBERSHIP_CASES) {
+    it(name, () => {
+      const partition = partitionBillRows([row], "2026-08", openBillId);
+      let actual: "open" | "future" | "neither" = "neither";
+      if (partition.openCycleRows.includes(row)) {
+        actual = "open";
+      } else if (partition.futureRows.includes(row)) {
+        actual = "future";
+      }
+
+      assert.equal(actual, expected);
     });
   }
 });

@@ -1,3 +1,5 @@
+import type { DerivedTransaction } from "./transaction.ts";
+
 /**
  * A credit card statement as we speak of it. Money in integer cents; dates as
  * `YYYY-MM-DD` taken from the payload's UTC parts, because the connectors send
@@ -33,6 +35,11 @@ export type ClosingDateSource = (typeof ClosingDateSource)[keyof typeof ClosingD
 export type OpenCycle = {
   readonly openCycle: string;
   readonly source: ClosingDateSource;
+};
+
+export type BillRowPartition = {
+  readonly openCycleRows: readonly DerivedTransaction[];
+  readonly futureRows: readonly DerivedTransaction[];
 };
 
 const MONTH_LENGTHS: Readonly<Record<number, number>> = {
@@ -86,6 +93,44 @@ export function identifyOpenCycle(
   }
 
   return null;
+}
+
+/** Separates rows that affect the open cycle from rows assigned to later cycles. */
+export function partitionBillRows(
+  rows: readonly DerivedTransaction[],
+  openCycle: string,
+  openBillId: string | null,
+): BillRowPartition {
+  const openCycleRows: DerivedTransaction[] = [];
+  const futureRows: DerivedTransaction[] = [];
+
+  for (const row of rows) {
+    if (belongsToOpenBill(row, openBillId)) {
+      openCycleRows.push(row);
+      continue;
+    }
+
+    if (row.billId !== null) {
+      continue;
+    }
+
+    if (belongsToFutureCycle(row, openCycle)) {
+      futureRows.push(row);
+      continue;
+    }
+
+    openCycleRows.push(row);
+  }
+
+  return { openCycleRows, futureRows };
+}
+
+function belongsToOpenBill(row: DerivedTransaction, openBillId: string | null): boolean {
+  return openBillId !== null && row.billId === openBillId;
+}
+
+function belongsToFutureCycle(row: DerivedTransaction, openCycle: string): boolean {
+  return row.billForecastDate === "0001-01" || (row.billForecastDate !== null && row.billForecastDate > openCycle);
 }
 
 function newestBill(bills: readonly Bill[]): Bill | null {
