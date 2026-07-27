@@ -32,6 +32,7 @@ export function rowToTransaction(row: Record<string, unknown>): Transaction {
     paymentMethod: nullableString(row["payment_method"]),
     mcc: nullableString(row["mcc"]),
     billId: nullableString(row["bill_id"]),
+    billForecastDate: nullableString(row["bill_forecast_date"]),
     instalmentNumber: nullableNumber(row["instalment_number"]),
     instalmentTotal: nullableNumber(row["instalment_total"]),
     purchaseDate: nullableString(row["purchase_date"]),
@@ -59,7 +60,7 @@ export function transactionValues(row: Transaction, log: Logger): readonly (stri
     row.occurredAt, row.localDate, row.amountCents, row.currency, row.originalAmountCents,
     row.originalCurrency, row.description, row.descriptionNorm, row.categoryId, row.document,
     row.counterpartyName, row.paymentMethod, row.mcc, row.billId, row.instalmentNumber,
-    row.instalmentTotal, row.purchaseDate, topCategoryFor(row, log),
+    row.billForecastDate, row.instalmentTotal, row.purchaseDate, topCategoryFor(row, log),
   ];
 }
 

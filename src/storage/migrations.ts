@@ -82,6 +82,12 @@ export const CACHE_MIGRATIONS: readonly Migration[] = [
       ${seedMccCategories()}
     `,
   },
+  {
+    to: 3,
+    up: `
+      ALTER TABLE transactions ADD COLUMN bill_forecast_date TEXT;
+    `,
+  },
 ];
 
 /** Never dropped: overrides, rules and closing days live here (§10). */

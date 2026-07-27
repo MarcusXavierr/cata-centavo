@@ -13,7 +13,7 @@ const TRANSACTION_COLUMNS = [
   "occurred_at", "local_date", "amount_cents", "currency", "original_amount_cents",
   "original_currency", "description", "description_norm", "category_id", "document",
   "counterparty_name", "payment_method", "mcc", "bill_id", "instalment_number",
-  "instalment_total", "purchase_date", "top_category_id",
+  "bill_forecast_date", "instalment_total", "purchase_date", "top_category_id",
 ] as const;
 
 function placeholders(n: number): string {
@@ -43,6 +43,7 @@ const TRANSACTION_INSERT = `
     mcc = excluded.mcc,
     bill_id = excluded.bill_id,
     instalment_number = excluded.instalment_number,
+    bill_forecast_date = excluded.bill_forecast_date,
     instalment_total = excluded.instalment_total,
     purchase_date = excluded.purchase_date,
     top_category_id = excluded.top_category_id
@@ -257,4 +258,3 @@ function readDataThrough(db: DatabaseSync, accountIds: readonly string[], today:
  * column against a 22-valued filter (design D2). Doing it at read time is what
  * let `categories: ["11000000"]` silently exclude every row tagged `11010000`.
  */
-
