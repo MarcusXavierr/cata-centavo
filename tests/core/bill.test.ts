@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { identifyOpenCycle, partitionBillRows, type ClosingDateSource } from "../../src/core/bill.ts";
+import {
+  derivePostedCents,
+  identifyOpenCycle,
+  partitionBillRows,
+  type ClosingDateSource,
+} from "../../src/core/bill.ts";
 import { todayIn } from "../../src/core/date.ts";
 import type { DerivedTransaction } from "../../src/core/transaction.ts";
 import { bill, billFixture, type BillFixture } from "../fakes/bill-builder.ts";
@@ -83,6 +88,42 @@ const MEMBERSHIP_CASES: readonly {
     openBillId: null, row: derived({ billId: null, billForecastDate: null }), expected: "open" },
 ];
 
+const POSTED_CASES: readonly {
+  readonly name: string;
+  readonly rows: readonly DerivedTransaction[];
+  readonly postedCents: number;
+}[] = [
+  {
+    name: "a purchase increases the bill despite arriving negative",
+    rows: [derived({ accountType: "CREDIT", amountCents: -12_345, categoryId: "11000000" })],
+    postedCents: 12_345,
+  },
+  {
+    name: "excludes the card bill payment regardless of the bank's wording",
+    rows: [
+      derived({ accountType: "CREDIT", amountCents: 10_000, categoryId: "05100000", description: "PAGAMENTO DE FATURA" }),
+      derived({ accountType: "CREDIT", amountCents: 20_000, categoryId: "05100000", description: "Pagamento recebido" }),
+    ],
+    postedCents: 0,
+  },
+  {
+    name: "keeps a refund inside the bill",
+    rows: [derived({ accountType: "CREDIT", amountCents: 2_500, categoryId: "12000000" })],
+    postedCents: -2_500,
+  },
+  {
+    name: "excludes every self-transfer leaf, not just the card payment",
+    rows: ["04000000", "04010000", "04020000", "04030000", "05100000"].map((categoryId) =>
+      derived({ accountType: "CREDIT", amountCents: 1_000, categoryId, description: "Unrelated wording" })),
+    postedCents: 0,
+  },
+  {
+    name: "an empty open cycle posts zero rather than failing",
+    rows: [],
+    postedCents: 0,
+  },
+];
+
 describe("identifyOpenCycle", () => {
   for (const { name, fixture, expected } of CYCLE_CASES) {
     it(name, () => {
@@ -106,6 +147,14 @@ describe("partitionBillRows", () => {
       }
 
       assert.equal(actual, expected);
+    });
+  }
+});
+
+describe("derivePostedCents", () => {
+  for (const { name, rows, postedCents } of POSTED_CASES) {
+    it(name, () => {
+      assert.equal(derivePostedCents(rows), postedCents);
     });
   }
 });

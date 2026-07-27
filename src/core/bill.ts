@@ -1,3 +1,4 @@
+import { isSelfTransfer } from "./self-transfer.ts";
 import type { DerivedTransaction } from "./transaction.ts";
 
 /**
@@ -41,6 +42,18 @@ export type BillRowPartition = {
   readonly openCycleRows: readonly DerivedTransaction[];
   readonly futureRows: readonly DerivedTransaction[];
 };
+
+/** Sums posted rows in bill sign, where a purchase increases the amount due. */
+export function derivePostedCents(rows: readonly DerivedTransaction[]): number {
+  let postedCents = 0;
+  for (const row of rows) {
+    if (isSelfTransfer(row)) {
+      continue;
+    }
+    postedCents -= row.amountCents;
+  }
+  return postedCents;
+}
 
 const MONTH_LENGTHS: Readonly<Record<number, number>> = {
   1: 31,
