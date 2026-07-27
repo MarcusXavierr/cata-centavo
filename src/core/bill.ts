@@ -41,6 +41,7 @@ export type OpenCycle = {
 export type BillRowPartition = {
   readonly openCycleRows: readonly DerivedTransaction[];
   readonly futureRows: readonly DerivedTransaction[];
+  readonly wrappedInstalmentRowIds: ReadonlySet<string>;
 };
 
 export type BillCommitment = {
@@ -79,7 +80,10 @@ export function deriveBillCommitment(partition: BillRowPartition, utilizationCen
     materializedCents -= row.amountCents;
   }
 
-  const impliedCents = deriveImpliedCents(partition.openCycleRows);
+  const impliedCents = deriveImpliedCents(
+    partition.openCycleRows,
+    partition.wrappedInstalmentRowIds,
+  );
 
   const futureCents = Math.max(materializedCents, impliedCents);
   return {
@@ -100,10 +104,13 @@ export function deriveBillCommitment(partition: BillRowPartition, utilizationCen
  * The highest posted position contributes its unposted tail. Every other
  * distinct position in the same cycle contributes once.
  */
-function deriveImpliedCents(rows: readonly DerivedTransaction[]): number {
+function deriveImpliedCents(
+  rows: readonly DerivedTransaction[],
+  wrappedInstalmentRowIds: ReadonlySet<string>,
+): number {
   const plans = new Map<string, OpenCycleInstalmentPlan>();
   for (const row of rows) {
-    addToOpenCyclePlans(plans, row);
+    addToOpenCyclePlans(plans, wrappedInstalmentRowIds, row);
   }
 
   let impliedCents = 0;
@@ -117,9 +124,13 @@ function deriveImpliedCents(rows: readonly DerivedTransaction[]): number {
 
 function addToOpenCyclePlans(
   plans: Map<string, OpenCycleInstalmentPlan>,
+  wrappedInstalmentRowIds: ReadonlySet<string>,
   row: DerivedTransaction,
 ): void {
   if (row.instalmentNumber === null || row.instalmentTotal === null) {
+    return;
+  }
+  if (wrappedInstalmentRowIds.has(row.id)) {
     return;
   }
 
@@ -203,8 +214,12 @@ export function partitionBillRows(
 ): BillRowPartition {
   const openCycleRows: DerivedTransaction[] = [];
   const futureRows: DerivedTransaction[] = [];
+  const completedInstalmentDates = new Map<string, string>();
+  const wrappedInstalmentRowIds = new Set<string>();
 
   for (const row of rows) {
+    trackInstalmentHistory(row, completedInstalmentDates, wrappedInstalmentRowIds);
+
     if (belongsToOpenBill(row, openBillId)) {
       openCycleRows.push(row);
       continue;
@@ -222,7 +237,40 @@ export function partitionBillRows(
     openCycleRows.push(row);
   }
 
-  return { openCycleRows, futureRows };
+  return { openCycleRows, futureRows, wrappedInstalmentRowIds };
+}
+
+/**
+ * Marks a counter that restarted after the same raw description completed.
+ *
+ * This has a designed false positive: if two separate instalment purchases
+ * share a description and the first one completed, the second one's real
+ * remainder is zeroed. The feed has no plan identifier that can separate them.
+ */
+function trackInstalmentHistory(
+  row: DerivedTransaction,
+  completedInstalmentDates: Map<string, string>,
+  wrappedInstalmentRowIds: Set<string>,
+): void {
+  const completedDate = completedInstalmentDates.get(row.description);
+  if (completedDate !== undefined && completedDate < row.localDate) {
+    wrappedInstalmentRowIds.add(row.id);
+  }
+
+  if (!isCompletedInstalment(row)) {
+    return;
+  }
+
+  if (completedDate === undefined || row.localDate < completedDate) {
+    completedInstalmentDates.set(row.description, row.localDate);
+  }
+}
+
+function isCompletedInstalment(row: DerivedTransaction): boolean {
+  if (row.instalmentNumber === null || row.instalmentTotal === null) {
+    return false;
+  }
+  return row.instalmentNumber === row.instalmentTotal;
 }
 
 function belongsToOpenBill(row: DerivedTransaction, openBillId: string | null): boolean {

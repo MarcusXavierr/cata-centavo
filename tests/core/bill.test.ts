@@ -233,4 +233,70 @@ describe("deriveBillCommitment", () => {
       committedCents: 41_000,
     });
   });
+
+  it("treats a wrap-around subscription as no commitment at all", () => {
+    const rows = [
+      derived({
+        id: "subscription-completed",
+        localDate: "2026-06-20",
+        amountCents: -500,
+        description: "MEMBER PASS",
+        descriptionNorm: "MEMBER PASS",
+        billId: "closed-bill",
+        instalmentNumber: 12,
+        instalmentTotal: 12,
+      }),
+      derived({
+        id: "subscription-wrapped",
+        localDate: "2026-07-20",
+        amountCents: -500,
+        description: "MEMBER PASS",
+        descriptionNorm: "MEMBER PASS",
+        billForecastDate: "2026-08",
+        instalmentNumber: 1,
+        instalmentTotal: 12,
+      }),
+    ];
+    const partition = partitionBillRows(rows, "2026-08", null);
+
+    assert.deepEqual(deriveBillCommitment(partition, 8_000), {
+      materializedCents: 0,
+      impliedCents: 0,
+      futureCents: 0,
+      committedCents: 8_000,
+    });
+  });
+
+  it("reads the raw description, not the normalized one", () => {
+    const rows = [
+      derived({
+        id: "prior-completion",
+        localDate: "2026-06-20",
+        amountCents: -1_000,
+        description: "CLOUD MUSIC BR 12/12",
+        descriptionNorm: "CLOUD MUSIC BR",
+        billId: "closed-bill",
+        instalmentNumber: 12,
+        instalmentTotal: 12,
+      }),
+      derived({
+        id: "current-instalment",
+        localDate: "2026-07-20",
+        amountCents: -1_000,
+        description: "CLOUD MUSIC BR 8/12",
+        descriptionNorm: "CLOUD MUSIC BR",
+        billForecastDate: "2026-08",
+        instalmentNumber: 8,
+        instalmentTotal: 12,
+      }),
+    ];
+    const partition = partitionBillRows(rows, "2026-08", null);
+
+    assert.deepEqual(deriveBillCommitment(partition, 10_000), {
+      materializedCents: 0,
+      impliedCents: 4_000,
+      futureCents: 4_000,
+      committedCents: 6_000,
+    });
+  });
 });
