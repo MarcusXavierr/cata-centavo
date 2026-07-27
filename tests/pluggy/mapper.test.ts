@@ -369,6 +369,18 @@ describe("toTransaction", () => {
     });
   }
 
+  const FORECAST_CASES: readonly { readonly name: string; readonly id: string; readonly expected: string | null }[] = [
+    { name: "carries a forecast cycle", id: "t-card-fc-cycle", expected: "2026-08" },
+    { name: "carries the unassigned-cycle sentinel verbatim", id: "t-card-fc-sentinel", expected: "0001-01" },
+    { name: "is null when the nested key is omitted", id: "t-card-fc-absent", expected: null },
+  ];
+
+  for (const testCase of FORECAST_CASES) {
+    it(testCase.name, () => {
+      assert.equal(toTransaction(wireRow(testCase.id), CARD_ACCOUNT).billForecastDate, testCase.expected);
+    });
+  }
+
   it("refuses an account type that cannot reach this endpoint", () => {
     const investment: Account = { ...BANK_ACCOUNT, type: "INVESTMENT" };
 

@@ -130,6 +130,7 @@ export const CREDIT_CARD_METADATA = z.object({
   payeeMCC: z.number().optional(),
   purchaseDate: z.string().optional(),
   feeType: z.string().optional(),
+  billForecastDate: z.string().optional(),
 });
 
 export const PAYMENT_DATA = z.object({
