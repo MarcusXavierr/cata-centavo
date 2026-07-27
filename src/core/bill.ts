@@ -50,6 +50,13 @@ export type BillCommitment = {
   readonly committedCents: number;
 };
 
+type OpenCycleInstalmentPlan = {
+  amountCents: number;
+  highestInstalmentNumber: number;
+  instalmentNumbers: Set<number>;
+  instalmentTotal: number;
+};
+
 /** Sums posted rows in bill sign, where a purchase increases the amount due. */
 export function derivePostedCents(rows: readonly DerivedTransaction[]): number {
   let postedCents = 0;
@@ -72,13 +79,7 @@ export function deriveBillCommitment(partition: BillRowPartition, utilizationCen
     materializedCents -= row.amountCents;
   }
 
-  let impliedCents = 0;
-  for (const row of partition.openCycleRows) {
-    if (row.instalmentNumber === null || row.instalmentTotal === null) {
-      continue;
-    }
-    impliedCents -= row.amountCents * (row.instalmentTotal - row.instalmentNumber);
-  }
+  const impliedCents = deriveImpliedCents(partition.openCycleRows);
 
   const futureCents = Math.max(materializedCents, impliedCents);
   return {
@@ -87,6 +88,58 @@ export function deriveBillCommitment(partition: BillRowPartition, utilizationCen
     futureCents,
     committedCents: utilizationCents - futureCents,
   };
+}
+
+/**
+ * Dedupes bulk-posted plans inside one open cycle.
+ *
+ * Raw `description | instalmentTotal` is safe only at this boundary. A wrapped
+ * counter needs rows from two cycles, while a counter embedded in the raw
+ * description gives each instalment a different key.
+ *
+ * The highest posted position contributes its unposted tail. Every other
+ * distinct position in the same cycle contributes once.
+ */
+function deriveImpliedCents(rows: readonly DerivedTransaction[]): number {
+  const plans = new Map<string, OpenCycleInstalmentPlan>();
+  for (const row of rows) {
+    addToOpenCyclePlans(plans, row);
+  }
+
+  let impliedCents = 0;
+  for (const plan of plans.values()) {
+    const otherOpenCycleInstalments = plan.instalmentNumbers.size - 1;
+    const unpostedInstalments = plan.instalmentTotal - plan.highestInstalmentNumber;
+    impliedCents -= plan.amountCents * (otherOpenCycleInstalments + unpostedInstalments);
+  }
+  return impliedCents;
+}
+
+function addToOpenCyclePlans(
+  plans: Map<string, OpenCycleInstalmentPlan>,
+  row: DerivedTransaction,
+): void {
+  if (row.instalmentNumber === null || row.instalmentTotal === null) {
+    return;
+  }
+
+  const key = `${row.description}|${row.instalmentTotal}`;
+  const plan = plans.get(key);
+  if (plan === undefined) {
+    plans.set(key, {
+      amountCents: row.amountCents,
+      highestInstalmentNumber: row.instalmentNumber,
+      instalmentNumbers: new Set([row.instalmentNumber]),
+      instalmentTotal: row.instalmentTotal,
+    });
+    return;
+  }
+
+  plan.instalmentNumbers.add(row.instalmentNumber);
+  if (row.instalmentNumber > plan.highestInstalmentNumber) {
+    plan.amountCents = row.amountCents;
+    plan.highestInstalmentNumber = row.instalmentNumber;
+  }
 }
 
 const MONTH_LENGTHS: Readonly<Record<number, number>> = {

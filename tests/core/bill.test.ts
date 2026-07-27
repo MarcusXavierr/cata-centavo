@@ -12,6 +12,7 @@ import { todayIn } from "../../src/core/date.ts";
 import type { DerivedTransaction } from "../../src/core/transaction.ts";
 import { bill, billFixture, type BillFixture } from "../fakes/bill-builder.ts";
 import { derived } from "../fakes/transaction-builder.ts";
+import { bulkPostingCard } from "../fixtures/bulk-posting-card.ts";
 import { materializingCard } from "../fixtures/materializing-card.ts";
 import { onePerBillCard } from "../fixtures/one-per-bill-card.ts";
 
@@ -220,5 +221,16 @@ describe("deriveBillCommitment", () => {
     const partition = partitionBillRows(sentinelRow, "2026-08", null);
 
     assert.equal(deriveBillCommitment(partition, 1_000).committedCents, -1_000);
+  });
+
+  it("counts a plan posted as five rows in one cycle once, not five times", () => {
+    const partition = partitionBillRows(bulkPostingCard.rows, "2026-08", null);
+
+    assert.deepEqual(deriveBillCommitment(partition, bulkPostingCard.utilizationCents), {
+      materializedCents: 0,
+      impliedCents: 9_000,
+      futureCents: 9_000,
+      committedCents: 41_000,
+    });
   });
 });
