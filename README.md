@@ -4,8 +4,6 @@
 
 # Cata-centavo
 
-**Ask an agent about your own money.** Brazilian bank and credit card data over [MCP](https://modelcontextprotocol.io), via [Pluggy](https://pluggy.ai).
-
 <p>
   <a href="https://www.npmjs.com/package/cata-centavo"><img src="https://img.shields.io/npm/v/cata-centavo?logo=npm&logoColor=white&color=cb3837" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/cata-centavo"><img src="https://img.shields.io/npm/dm/cata-centavo?logo=npm&logoColor=white" alt="npm downloads"></a>
@@ -26,7 +24,7 @@
 
 <!-- Replace the placeholder below with the real screenshot: drag the PNG into a new GitHub issue, copy the user-attachments URL it gives you, and paste it into src. -->
 <p align="center">
-  <img src="https://placehold.co/800x450/1c2128/8b949e?text=usage+screenshot" alt="cata-centavo answering a question about a credit card bill" width="800">
+  <img width="855" height="352" alt="image" src="https://github.com/user-attachments/assets/ee489a5c-1024-4a93-b476-32dec8f6cad6" />
 </p>
 
 ---
