@@ -8,13 +8,27 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    strategy:
+      # One runtime failing should not hide the other's result.
+      fail-fast: false
+      matrix:
+        # 24 is .nvmrc, the development runtime. 22 is there because `engines`
+        # promises it (ADR §3). Both resolve to the latest patch, which matters:
+        # this job runs `.ts` directly, and type stripping only became unflagged
+        # partway through the 22 line. Pinning this to an early 22.x would make
+        # `npm test` report "# tests 0" and exit 0. The `floor` job below covers
+        # the oldest supported version instead, without running the suite.
+        node: [22, 24]
+
+    name: check (node ${{ matrix.node }})
+
     steps:
       - uses: actions/checkout@v4
 
-      # Reads .nvmrc, so the Node version lives in exactly one place.
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ matrix.node }}
           cache: npm
 
       # `ci`, not `install`: installs strictly from the lockfile and fails if it
@@ -33,10 +47,43 @@ jobs:
       # not a style opinion. See docs/plans/2026-07-26-dependency-rules-design.md.
       - run: npm run deps
 
-      - run: npm test
-
-      # A report, not a gate. Coverage shows what the suite cannot see; mutation
-      # testing checks whether the covered code is asserted meaningfully.
-      - run: npm run coverage
+      # Guards the matrix comment above: a runtime that silently executed no
+      # tests would otherwise pass every step in this job. `pipefail` is set
+      # explicitly because the default shell here is `bash -e`, without it —
+      # `tee` would swallow a failing suite's exit code.
+      - run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+      # Anchored: `tests/tools/test-sensor.test.ts` carries a fixture whose text
+      # contains "# tests 0", and an unanchored match would read it as a result.
+      # Both reporters put the real summary at column 0 — "# " under TAP on 22,
+      # "ℹ " under spec on 24.
+      - run: grep -qE "^(#|ℹ) tests [1-9]" test-output.txt
 
       - run: npm run build
+
+      # A report, not a gate, so it runs once rather than per runtime. Coverage
+      # shows what the suite cannot see; mutation testing checks whether the
+      # covered code is asserted meaningfully.
+      - run: npm run coverage
+        if: matrix.node == 24
+
+  floor:
+    # `engines` says >=22.13.0, and no job above tests that claim: the suite
+    # needs type stripping, which 22.13 does not have. So this builds the
+    # package and runs it, which is all a consumer ever executes. `--help`
+    # loads the whole import graph, so a missing `node:sqlite` fails here.
+    name: floor (node 22.13.0, the engines minimum)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: node dist/bin/cata-centavo.js --help

@@ -62,6 +62,7 @@ Design and the traps found on Linux: `docs/plans/2026-07-26-sensors-sidecar-desi
 ## Runtime constraints that bite
 
 - **Node 24 (`.nvmrc` = v24.15.0)**, native type stripping, no `tsx`/`ts-node`, no build step in dev.
+- **Development needs Node 24; the published package needs only 22.13** (`engines`). The two floors differ because the package ships compiled `.js` and nobody installing it strips types. Do not "fix" the mismatch by raising `engines` — and do not lower `.nvmrc`, because Node 22.13 cannot run `.ts` at all: `node --test` there reports `# tests 0` and exits 0. ADR §3.
 - **No `enum`, no parameter properties** (`constructor(private x)`). `erasableSyntaxOnly` rejects them at tsc time because they crash at runtime with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. Use a `const` object plus a derived union — see `src/cli/dispatch.ts` for the pattern.
 - **Source files import `.ts` extensions** (`from "./balance.ts"`). `rewriteRelativeImportExtensions` turns them into `.js` on build.
 - **Nothing but JSON-RPC may reach stdout.** In server mode stdout *is* the protocol channel. Every human-facing message, log line and error goes to stderr, always — including any fallback path in a logger.

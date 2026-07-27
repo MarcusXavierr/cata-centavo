@@ -33,7 +33,7 @@ Each tool's exact parameters and return shape are published in its own MCP descr
 
 ## Requirements
 
-- Node 24 (`nvm use` reads `.nvmrc`)
+- Node 22.13 or newer. On Node 22 you get an `ExperimentalWarning` about SQLite on stderr at startup; on Node 24 you don't, because `node:sqlite` is stable there. Node 20 has no `node:sqlite` and cannot run this at all.
 - A Pluggy account, with a client id and secret
 - Bank connections already linked in MeuPluggy — this server does not create connections, only reads from ones that already exist
 

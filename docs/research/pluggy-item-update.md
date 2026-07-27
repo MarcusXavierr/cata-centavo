@@ -280,11 +280,7 @@ Three consequences, all of them narrowing what this project can know:
   7-day regulated window and the 4-per-month credit-card-detail quota belong to the connections
   made inside MeuPluggy. Ours reports `isOpenFinance: false` and refuses updates outright, so
   neither figure is ours to reason about, and freshness cannot be predicted from either.
-- **No on-demand refresh, and no auto-sync visible either.** `nextAutoSyncAt: null` on an item
-  whose `lastUpdatedAt` was two days old. The auto-sync every 24/12/8h is documented for
-  production applications only, so on this tier "Pluggy syncs it on its own schedule" is the
-  documented mechanism, not something the item payload confirms. Worth a question to support:
-  what does move `lastUpdatedAt` on a connector-200 item?
+- **No on-demand refresh — but auto-sync does run.** *Corrected 2026-07-26 by `docs/research/2026-07-26-phase-0-5-recon.md`. This bullet originally read "No on-demand refresh, and no auto-sync visible either. `nextAutoSyncAt: null` on an item whose `lastUpdatedAt` was two days old", which generalized from the single item available at the time.* Across three items, two carry `nextAutoSyncAt` set to `lastUpdatedAt` plus exactly 24 hours, with a same-day `lastUpdatedAt`; the third — the one the original observation was made against — has `nextAutoSyncAt: null` and a `lastUpdatedAt` three days old. So the 24/12/8h auto-sync documented for production applications is observably running on connector 200, and a `null` `nextAutoSyncAt` is a property of one item's state rather than of the tier or the connector. The `PATCH` refusal above is unchanged, so there is still nothing we can trigger ourselves. Two things stay unknown: why that one item is stalled — no `autoSyncDisabledAt`, no error, no `statusDetail`, and `status: UPDATED` — and what moves `lastUpdatedAt` on a connector-200 item at all. Both are still worth a question to support.
 
 ## Not confirmed
 
