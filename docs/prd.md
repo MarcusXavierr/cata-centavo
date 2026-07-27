@@ -1,6 +1,6 @@
 # PRD — cata-centavo
 
-Last revised: 2026-07-26, after the Phase 0.5 reconnaissance run.
+Last revised: 2026-07-27, after the Phase 4 live acceptance run.
 
 This document says **what we are building and what "done" means in the user's words.** `docs/adr/0001-stack-and-architecture.md` says how, and wins on every engineering question. Where this document and the ADR disagree about scope, this one is newer — the recon of 2026-07-26 invalidated several of the ADR's premises, and the amendments have not landed yet. `docs/research/2026-07-26-phase-0-5-recon.md` is the evidence.
 
@@ -84,9 +84,9 @@ Each ships something usable and answers a question the next one needs.
 **Phase 3 — categories.** Done. Not "add categorization" but "keep it once the provider stops sending it": the plan drops to free in roughly fifteen days and the enrichment goes with it, and because a walk overwrites every cached row, what disappears is the history, not just the future. So the enrichment is harvested into `data.db` — which is never dropped — on every walk, and reads resolve override → manual counterparty → live Pluggy → harvested Pluggy → learned CNPJ → MCC in one query across both files. The taxonomy ships as code rather than seeded, which also removes a per-read call to `GET /categories`.
 *Acceptance:* "quanto gastei com mercado?" works, and correcting one transaction sticks. Correcting a merchant by CPF/CNPJ applies backwards over everything they already sold you. **And the one that proves the phase did its job without waiting for the tier to change:** replay the same wallet with every `category` nulled, as though the window had already closed — every aggregate, group total and filtered query returns identical numbers, and only `categorySrc` moves. `tests/storage/tier-change.test.ts`.
 
-**Phase 4 — credit cards.** `getBills`, `getBillSummary`, `manageClosingDate`.
-*Acceptance:* "qual minha fatura aberta?" gives a number that matches the bank's app. Empty bills read as normal, because on this connector they often are.
-**Read `docs/research/2026-07-26-open-bill-probe.md` first.** The open bill was probed against real cards on 2026-07-26 and is not derivable on both of them yet: `/bills` holds closed cycles only, and the two cards report unbilled instalments by opposite mechanisms. That document carries the two numbers this phase's acceptance is measured against, the hypotheses already rejected, and four questions to answer before writing the tool — one of which may reorder Phase 4 and Phase 6.
+**Phase 4 — credit cards.** Done. `getBills`, `getBillSummary`, `listClosingDays`, `setClosingDay`, `deleteClosingDay`.
+*Acceptance:* "qual minha fatura aberta?" returns `posted`, `committed` and the gap between them, each with the date its transaction data stops at. One number cannot be made trustworthy across both live posting styles: delayed rows pull `posted` down, while missing or ambiguous instalment data can move `committed` independently. The tool therefore names both measurements and reports their disagreement instead of choosing one behind a hidden rule. Empty bills remain a normal result. None of the current live cards had an empty list, so that case is automated acceptance rather than claimed live evidence.
+**Evidence:** `docs/research/2026-07-26-phase-4-acceptance.md` records the 2026-07-27 live totals and counts. `docs/research/2026-07-26-phase-4-open-bill-derivation.md` records why the two-figure contract replaced the original one-number target.
 
 **Phase 5 — observability.** `listSources` only; `manualUpdate` is gone. A revoked consent becomes an explicit error rather than an empty list.
 *Acceptance:* "quais bancos você enxerga?" lists them with last sync and consent state, and says plainly that a bank missing from the list is invisible to it by construction.
@@ -106,6 +106,6 @@ Blocking, in the order they bite.
 
 The Phase 1 decision record and rationale are in `docs/plans/2026-07-26-phase-1-accounts-and-balances-design.md`.
 4. ~~**What the `getTransactions` aggregate groups by** — category, merchant, account, month. The token budget follows from the answer.~~ **Closed 2026-07-26:** top-level category, with up to ten sample ids per group. See the Phase 2 acceptance record.
-5. **`manageClosingDate` as one tool with an `operation` enum, or three verbs.** *Blocks Phase 4.*
+5. ~~**`manageClosingDate` as one tool with an `operation` enum, or three verbs.** *Blocks Phase 4.*~~ **Closed 2026-07-27:** three verbs, `listClosingDays`, `setClosingDay` and `deleteClosingDay`.
 6. ~~**Test fixtures without committing real statements** to a public repository.~~ **Closed 2026-07-26:** fixtures use synthetic transactions and a redacted Pluggy-shaped page; the live acceptance record stores totals and counts, not statements or transaction ids.
 7. **Is 14.8% uncategorized tolerable?** Answering no is the only thing that puts a rules engine back on the map.

@@ -78,6 +78,36 @@
       "categoryId": "16000000",
       "status": "PENDING",
       "creditCardMetadata": { "billId": "bill-1", "feeType": "IOF" }
+    },
+    {
+      "id": "t-card-fc-cycle",
+      "accountId": "acc-card",
+      "date": "2026-06-23T03:00:00.000Z",
+      "description": "FORECAST CYCLE",
+      "amount": 10.0,
+      "currencyCode": "BRL",
+      "status": "POSTED",
+      "creditCardMetadata": { "billForecastDate": "2026-08" }
+    },
+    {
+      "id": "t-card-fc-sentinel",
+      "accountId": "acc-card",
+      "date": "2026-06-24T03:00:00.000Z",
+      "description": "FORECAST SENTINEL",
+      "amount": 11.0,
+      "currencyCode": "BRL",
+      "status": "POSTED",
+      "creditCardMetadata": { "billForecastDate": "0001-01" }
+    },
+    {
+      "id": "t-card-fc-absent",
+      "accountId": "acc-card",
+      "date": "2026-06-25T03:00:00.000Z",
+      "description": "FORECAST ABSENT",
+      "amount": 12.0,
+      "currencyCode": "BRL",
+      "status": "POSTED",
+      "creditCardMetadata": { "payeeMCC": 5814 }
     }
   ],
   "next": null

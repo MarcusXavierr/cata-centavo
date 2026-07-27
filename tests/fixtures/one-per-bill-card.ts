@@ -1,0 +1,68 @@
+import { bill, billFixture } from "../fakes/bill-builder.ts";
+import { derived } from "../fakes/transaction-builder.ts";
+
+const ACCOUNT_ID = "one-per-bill-card";
+
+export const onePerBillCard = billFixture({
+  accountId: ACCOUNT_ID,
+  utilizationCents: 8_000,
+  bills: [bill({ id: "one-per-bill-closed", totalCents: 4_000 })],
+  rows: [
+    derived({
+      id: "subscription-completed",
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: "2026-02-20T15:00:00.000Z",
+      localDate: "2026-02-20",
+      amountCents: -500,
+      description: "MEMBER PASS 12/12",
+      descriptionNorm: "MEMBER PASS",
+      billId: "one-per-bill-closed",
+      instalmentNumber: 12,
+      instalmentTotal: 12,
+    }),
+    derived({
+      id: "subscription-wrapped",
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: "2026-07-20T15:00:00.000Z",
+      localDate: "2026-07-20",
+      amountCents: -500,
+      description: "MEMBER PASS 1/12",
+      descriptionNorm: "MEMBER PASS",
+      billForecastDate: "2026-08",
+      instalmentNumber: 1,
+      instalmentTotal: 12,
+    }),
+    derived({
+      id: "one-per-bill-open",
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: "2026-07-21T15:00:00.000Z",
+      localDate: "2026-07-21",
+      amountCents: -2_000,
+      description: "STUDIO DESK 1/2",
+      descriptionNorm: "STUDIO DESK",
+      billForecastDate: "2026-08",
+      instalmentNumber: 1,
+      instalmentTotal: 2,
+    }),
+    derived({
+      id: "one-per-bill-sentinel",
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: "2026-07-21T15:00:00.000Z",
+      localDate: "2026-07-21",
+      amountCents: -2_000,
+      description: "STUDIO DESK 2/2",
+      descriptionNorm: "STUDIO DESK",
+      billForecastDate: "0001-01",
+      instalmentNumber: 2,
+      instalmentTotal: 2,
+    }),
+  ],
+});

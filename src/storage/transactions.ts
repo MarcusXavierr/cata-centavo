@@ -13,7 +13,7 @@ const TRANSACTION_COLUMNS = [
   "occurred_at", "local_date", "amount_cents", "currency", "original_amount_cents",
   "original_currency", "description", "description_norm", "category_id", "document",
   "counterparty_name", "payment_method", "mcc", "bill_id", "instalment_number",
-  "instalment_total", "purchase_date", "top_category_id",
+  "bill_forecast_date", "instalment_total", "purchase_date", "top_category_id",
 ] as const;
 
 function placeholders(n: number): string {
@@ -43,6 +43,7 @@ const TRANSACTION_INSERT = `
     mcc = excluded.mcc,
     bill_id = excluded.bill_id,
     instalment_number = excluded.instalment_number,
+    bill_forecast_date = excluded.bill_forecast_date,
     instalment_total = excluded.instalment_total,
     purchase_date = excluded.purchase_date,
     top_category_id = excluded.top_category_id
@@ -70,6 +71,7 @@ export function createTransactionStore(db: DatabaseSync, log: Logger, clock: Clo
     },
     query: (filter) => queryTransactions(db, filter),
     byIds: (ids) => findByIds(db, ids),
+    cardRows: (accountId) => findCardRows(db, accountId),
     dataThrough: (accountIds, today) => readDataThrough(db, accountIds, today),
   };
 }
@@ -229,6 +231,16 @@ function findByIds(db: DatabaseSync, ids: readonly string[]): readonly DerivedTr
   return rows.map((row) => rowToDerived(row));
 }
 
+function findCardRows(db: DatabaseSync, accountId: string): readonly DerivedTransaction[] {
+  const sql = `WITH derived AS (
+    SELECT t.${TRANSACTION_COLUMNS.join(", t.")}, ${DERIVED_COLUMNS}
+    FROM transactions t
+    WHERE t.account_id = ?
+  ) SELECT * FROM derived ORDER BY local_date, id`;
+  const rows = db.prepare(sql).all(accountId) as Record<string, unknown>[];
+  return rows.map((row) => rowToDerived(row));
+}
+
 function readFreshness(db: DatabaseSync, accountId: string): string | null | undefined {
   const row = db.prepare("SELECT last_updated_at FROM transaction_sync WHERE account_id = ?").get(accountId);
   if (row === undefined) {
@@ -257,4 +269,3 @@ function readDataThrough(db: DatabaseSync, accountIds: readonly string[], today:
  * column against a 22-valued filter (design D2). Doing it at read time is what
  * let `categories: ["11000000"]` silently exclude every row tagged `11010000`.
  */
-

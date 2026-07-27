@@ -42,6 +42,14 @@ export type Transaction = {
   /** Absent on bank rows. */
   readonly mcc: string | null;
   readonly billId: string | null;
+  /**
+   * The cycle Pluggy forecasts this row onto, `YYYY-MM`. Absent on most rows.
+   * `"0001-01"` is a sentinel meaning "an instalment with no cycle assigned
+   * yet", not a date. Unreliable as an absolute value — one connector stamps
+   * the closed cycle onto purchases made after it closed — so it is only ever
+   * compared against the open cycle, never read as the truth.
+   */
+  readonly billForecastDate: string | null;
   readonly instalmentNumber: number | null;
   readonly instalmentTotal: number | null;
   readonly purchaseDate: string | null;
@@ -49,4 +57,3 @@ export type Transaction = {
 
 /** A cached transaction plus the category the derivation resolved for it. */
 export type DerivedTransaction = Transaction & ResolvedCategory;
-

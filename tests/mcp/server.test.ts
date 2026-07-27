@@ -31,6 +31,11 @@ describe("MCP server", () => {
       "getTransactionDetails",
       "setCategory",
       "setCounterpartyCategory",
+      "listClosingDays",
+      "setClosingDay",
+      "deleteClosingDay",
+      "getBills",
+      "getBillSummary",
       "listSources",
     ]);
 

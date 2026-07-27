@@ -669,6 +669,8 @@ Behaviour varies by institution: some post every installment right after the pur
 > Substituting the row's own `amount` for the missing `totalAmount` is not a safe fallback — it fabricates groups. On the author's card B it yields 55 groups where `purchaseDate` yields 56, by merging two unrelated purchases that happen to share a description, an amount and an instalment count into a single group of twelve rows, which then reads as "a 12× purchase posted all at once". `purchaseDate` is present on 120 of the 122 instalment rows in the wallet, absent only on the two belonging to the partial connection.
 >
 > **"Do not generalize from a single bank" is confirmed inside a single wallet.** Card C posts strictly one instalment per bill, 18 times out of 18. Card B posts several at once on 37 of its 56 instalment purchases, up to five rows for one purchase. `totalInstallments` values seen: 2, 3, 5, 10, 12. Nothing here reaches the 45×-instead-of-9× case §14.3 warns about, but the direction of the error is confirmed and the guard is needed. Source: `docs/research/2026-07-26-phase-0-5-recon.md`, §"Step 6".
+>
+> **Amendment, 2026-07-27 — the recommended grouping key failed its Phase 4 measurement.** `description | totalInstallments | purchaseDate` was the worst of the eight keys tried against the two live posting styles. No candidate grouped both cards correctly. Phase 6 inherits the full sweep in `docs/research/2026-07-26-phase-4-open-bill-derivation.md`; the key above is evidence from an earlier sample, not a recipe.
 
 ### 14.3 Read tools — credit cards
 
@@ -702,10 +704,14 @@ Two further constraints inherited from §16's analysis of the prior implementati
 >
 > One confirmation for the tool below: **`creditData.balanceCloseDate` is `null` on all three cards.** Pitfall #6 is not hypothetical on this connector, and `manageClosingDate` is the only source of a closing day. `billClosingDate` *is* populated on the 24 bills of the two full cards, so the date exists per bill even where it is missing from the account.
 
-**`manageClosingDate({ operation, accountId?, day? })`** — V1 · effort: low
-Purely local CRUD over `data.db.card_closing_day`, with `LIST`, `GET`, `INSERT`, `UPDATE`, `DELETE`. It exists because `balanceCloseDate` is not populated on every connector (pitfall #6), and `getBillSummary` needs a fallback.
+> **Amendment, 2026-07-27 — Phase 4 refines the open-cycle signal and the two bill figures.** A row belongs to the open cycle when its `billId` matches a bill that `/bills` publishes as open, or when it has no `billId` and its forecast is absent or no later than the open cycle. A published bill is open when its closing date has not passed. The live sandbox added a second case: a null closing date with a future due date is also open. This supersedes the 2026-07-26 shorthand that every present `billId` names a closed bill.
+>
+> `getBillSummary` returns `posted`, `committed` and their absolute `gap`, alongside utilization and the date through which transaction data is available. `posted` normally comes from open-cycle rows. When `/bills` publishes the open cycle, its total is authoritative: the live sandbox rows included a positive payment that the provider misclassified, and their sum was zero while the published bill total was 265.50. `committed` remains utilization minus instalments assigned to later cycles. The two figures are independent measurements, not proven bounds, so the tool reports both and does not pick a hidden headline number.
+>
+> **Bills are not cached.** §11 records that bills may refresh only once a day, but each bill tool still wants the newest list. Reading three live lists costs three requests per wallet. Caching them would add a cache migration, a table, invalidation and a freshness rule to save those requests. It would also leave `getBillSummary` reconciling three snapshots: cached transactions, cached bills and the current account utilization. Phase 4 reads bills live on every request, keeps transactions cached with `dataThrough`, and uses `staleDays` to state the age difference.
 
-**Open design question:** a single tool with an `operation` enum is harder for a model to use correctly than distinct verbs (`listClosingDates`, `setClosingDate`, `deleteClosingDate`). Pierre models it as one tool; we should probably not. Settle before implementing §15 phase 4.
+**`listClosingDays()` · `setClosingDay(accountId, day)` · `deleteClosingDay(accountId)`** — V1 · effort: low
+Purely local CRUD over `data.db.card_closing_day`. `setClosingDay` is an upsert, and the stored day is clamped to the target month's length when used. The three verbs replace `manageClosingDate`; the operation-enum question is closed.
 
 ### 14.4 Write tools — categorization
 
@@ -777,10 +783,12 @@ It **mitigates pitfall #7** (revoked consent returns empty data, not an error) o
 | `getTransactions` | V1 | `/v2/transactions` cursor walk + cache | medium |
 | `listTransactions` | V1 | cache, paged, `limit <= 100` | low |
 | `getTransactionDetails` | V1 | cache | low |
-| `getBills` | V1 | `GET /bills?accountId=` | low |
-| `getBillSummary` | V1 | derived — `creditData` + open-bill rows (signal TBD, §14.3) | medium |
+| `getBills` | V1 | live `GET /bills?accountId=` | low |
+| `getBillSummary` | V1 | account utilization + cached card rows + live bills | medium |
 | `getInstallments` | V1 | derived — no endpoint exists | **high** |
-| `manageClosingDate` | V1 | local state only | low |
+| `listClosingDays` | V1 | local state only | low |
+| `setClosingDay` | V1 | local state only | low |
+| `deleteClosingDay` | V1 | local state only | low |
 | `setCategory` | V1 | local state only | low |
 | `setCounterpartyCategory` | V1 | local state only | low |
 | ~~`manualUpdate`~~ | — | **removed 2026-07-26** — connector 200 refuses `PATCH /items/{id}` (§14.5) | — |
@@ -917,6 +925,8 @@ Ships `setCategory`, `setCounterpartyCategory`, the `mcc_categories` seed table,
 
 `getBills`, `getBillSummary`, `manageClosingDate`. Settle the `operation`-enum question from §14.3 first.
 
+> **Amendment, 2026-07-27 — Phase 4 ships.** The delivered surface is `getBills`, `getBillSummary`, `listClosingDays`, `setClosingDay` and `deleteClosingDay`. The live read-only acceptance record is `docs/research/2026-07-26-phase-4-acceptance.md`. It records both bill figures, their gap, freshness and bounded top counts without storing ids or statement detail.
+
 ### Phase 5 — Operations
 
 `manualUpdate` with its hours-long debounce, and `listSources`. Pitfall #7 becomes an explicit error here: empty response → check consent → if revoked or expired, fail loudly instead of reporting "no transactions".
@@ -1047,7 +1057,7 @@ Decisions this document names but does not make. Each says what it blocks, so a 
 - **`camelCase` or `snake_case`** for tool names (§14.0). Mechanical to apply, expensive to change after the README documents it. Blocks phase 1.
 - **The `isError`-content versus protocol-error split** (§16.4), per failure class. Our loudest designed failure — revoked consent — is worthless if it lands in the channel the model cannot read. Blocks phase 1.
 - **The aggregate grouping of `getTransactions`** — `sampleIds` and the cap are settled (§14.2), but *what the groups are* (category? merchant? account? month?) is not, and the token budget follows from it. Blocks phase 2.
-- **`manageClosingDate` as one tool with an `operation` enum, versus three verbs** (§14.3). Blocks phase 4.
+- ~~**`manageClosingDate` as one tool with an `operation` enum, versus three verbs** (§14.3). Blocks phase 4.~~ **Closed 2026-07-27:** `listClosingDays`, `setClosingDay` and `deleteClosingDay`.
 
 Two more are empirical rather than decisions, and Phase 0.5 exists to answer them: transaction id stability across re-sync (which §12's whole override design rests on) and whether Connector 200 is a regulated or Direct connector (which three separate decisions branch on blindly).
 

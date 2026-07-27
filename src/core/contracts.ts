@@ -7,6 +7,7 @@
  */
 
 import type { Account } from "./account.ts";
+import type { Bill } from "./bill.ts";
 import type { CategoryId } from "./category.ts";
 import type { DerivedTransaction, Transaction } from "./transaction.ts";
 
@@ -110,6 +111,8 @@ export type Bank = {
   getAccount(accountId: string): Promise<Account>;
   /** Every transaction on one account, walked to the end of the cursor. */
   getTransactions(account: Account): Promise<readonly Transaction[]>;
+  /** Every published credit-card statement on one account, newest first. */
+  getBills(account: Account): Promise<readonly Bill[]>;
   /** `null` when the endpoint answered with no consent at all — distinct from revoked. */
   getConsent(connectionId: string): Promise<Consent | null>;
 };
@@ -145,6 +148,11 @@ export type TransactionStore = {
   ): number;
   query(filter: TransactionFilter): readonly DerivedTransaction[];
   byIds(ids: readonly string[]): readonly DerivedTransaction[];
+  /**
+   * Every cached row for one card, unbounded by date. The bill derivation needs
+   * future-dated instalments and closed-cycle history, neither of which a range filter can express.
+   */
+  cardRows(accountId: string): readonly DerivedTransaction[];
   /** The newest `local_date` at or before `today`, per connection. */
   dataThrough(accountIds: readonly string[], today: string): ReadonlyMap<string, string>;
 };
@@ -159,4 +167,15 @@ export type CategoryWriter = {
   setCounterpartyCategory(document: string, category: CategoryId): { readonly affected: number };
 };
 
+/** A user-provided billing-cycle closing day for one credit card. */
+export type ClosingDay = {
+  readonly accountId: string;
+  readonly day: number;
+};
 
+/** Local closing-day writes and reads the credit-card tools require. */
+export type ClosingDayStore = {
+  list(): readonly ClosingDay[];
+  set(accountId: string, day: number): void;
+  delete(accountId: string): number;
+};

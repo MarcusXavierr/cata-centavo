@@ -24,6 +24,7 @@ export function tx(overrides: Partial<Transaction> = {}): Transaction {
     paymentMethod: null,
     mcc: null,
     billId: null,
+    billForecastDate: null,
     instalmentNumber: null,
     instalmentTotal: null,
     purchaseDate: null,

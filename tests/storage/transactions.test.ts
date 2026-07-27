@@ -106,7 +106,7 @@ describe("replaceAccount", () => {
 
   it("round-trips every field, including the detail columns", () => {
     const store = storeFor();
-    const row = tx({ id: "a", mcc: "5814", billId: "bill-1", instalmentNumber: 3, instalmentTotal: 12, document: "12345678900", counterpartyName: "MARIA", paymentMethod: "PIX", originalAmountCents: -2_000, originalCurrency: "USD", purchaseDate: "2026-04-20" });
+    const row = tx({ id: "a", mcc: "5814", billId: "bill-1", billForecastDate: "2026-09", instalmentNumber: 3, instalmentTotal: 12, document: "12345678900", counterpartyName: "MARIA", paymentMethod: "PIX", originalAmountCents: -2_000, originalCurrency: "USD", purchaseDate: "2026-04-20" });
 
     store.replaceAccount("acc-1", "conn-1", [row], null);
 
@@ -115,6 +115,14 @@ describe("replaceAccount", () => {
       category: "01000000",
       categorySrc: "pluggy",
     });
+  });
+
+  it("re-reads bill_forecast_date after an upsert of the same id", () => {
+    const store = storeFor();
+    store.replaceAccount("acc-1", "conn-1", [tx({ id: "t-1", billForecastDate: null })], null);
+    store.replaceAccount("acc-1", "conn-1", [tx({ id: "t-1", billForecastDate: "2026-09" })], null);
+
+    assert.equal(store.query(filterFor(["acc-1"]))[0]?.billForecastDate, "2026-09");
   });
 
 });
@@ -184,12 +192,26 @@ describe("query", () => {
   });
 });
 
+
 describe("byIds", () => {
   it("returns the requested rows and handles an empty request", () => {
     const store = seededStore();
 
     assert.deepEqual(idsOf(store.byIds(["food", "card"])), ["card", "food"]);
     assert.deepEqual(store.byIds([]), []);
+  });
+});
+
+describe("cardRows", () => {
+  it("returns rows outside any date window, ordered oldest first", () => {
+    const store = storeFor();
+    store.replaceAccount("card-1", "conn-1", [
+      tx({ id: "future", accountId: "card-1", localDate: "2026-11-25" }),
+      tx({ id: "past", accountId: "card-1", localDate: "2025-07-31" }),
+    ], null);
+    store.replaceAccount("card-2", "conn-1", [tx({ id: "other", accountId: "card-2" })], null);
+
+    assert.deepEqual(idsOf(store.cardRows("card-1")), ["past", "future"]);
   });
 });
 
@@ -241,4 +263,3 @@ describe("top_category_id write-time roll-up", () => {
     assert.equal(row?.["top_category_id"], null);
   });
 });
-

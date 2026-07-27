@@ -15,6 +15,7 @@ import { createTransactionReader } from "../core/transactions.ts";
 import { createPluggyClient } from "../pluggy/client.ts";
 import { toFailure } from "../pluggy/errors.ts";
 import { createCategoryWriter } from "../storage/categories.ts";
+import { createClosingDayStore } from "../storage/closing-days.ts";
 import { createTransactionStore } from "../storage/transactions.ts";
 import { readLocalState } from "../storage/diagnostics.ts";
 import { openDatabases, schemaVersion, type Databases } from "../storage/db.ts";
@@ -92,18 +93,23 @@ const sleep = (milliseconds: number): Promise<void> =>
     setTimeout(resolve, milliseconds);
   });
 
+type LocalServices = {
+  readonly reader: ReturnType<typeof createTransactionReader>;
+  readonly writer: ReturnType<typeof createCategoryWriter>;
+  readonly closingDays: ReturnType<typeof createClosingDayStore>;
+};
+
 /** Builds the source the server runs against, or the problems that block it, from a loaded config. */
 function toSource(
   result: ReturnType<typeof loadConfig>,
   log: ReturnType<typeof createLogger>,
-  reader?: ReturnType<typeof createTransactionReader>,
-  writer?: ReturnType<typeof createCategoryWriter>,
+  services?: LocalServices,
 ): Source {
   if (!result.ok) {
     return { ok: false, problems: result.problems };
   }
 
-  if (reader === undefined || writer === undefined) {
+  if (services === undefined) {
     const problem = "Local transaction cache is unavailable.";
     return { ok: false, problems: [problem], databaseProblems: [problem] };
   }
@@ -119,8 +125,9 @@ function toSource(
       log,
     }),
     toFailure,
-    reader,
-    writer,
+    reader: services.reader,
+    writer: services.writer,
+    closingDays: services.closingDays,
   };
 }
 
@@ -246,8 +253,9 @@ function createReadySource(
     clock: systemClock,
   });
   const writer = createCategoryWriter(databases.db, systemClock);
+  const closingDays = createClosingDayStore(databases.db, systemClock);
 
-  return toSource(result, log, reader, writer);
+  return toSource(result, log, { reader, writer, closingDays });
 }
 
 

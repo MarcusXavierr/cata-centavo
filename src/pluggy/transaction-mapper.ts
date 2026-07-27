@@ -45,7 +45,7 @@ type OriginalDetails = Pick<Transaction, "originalAmountCents" | "originalCurren
 type PaymentDetails = Pick<Transaction, "document" | "counterpartyName" | "paymentMethod">;
 type CardDetails = Pick<
   Transaction,
-  "mcc" | "billId" | "instalmentNumber" | "instalmentTotal" | "purchaseDate"
+  "mcc" | "billId" | "billForecastDate" | "instalmentNumber" | "instalmentTotal" | "purchaseDate"
 >;
 
 function originalDetails(wire: WireTransaction, sign: 1 | -1): OriginalDetails {
@@ -83,7 +83,14 @@ type CardMetadata = NonNullable<WireTransaction["creditCardMetadata"]>;
 
 function cardDetails(wire: WireTransaction): CardDetails {
   if (wire.creditCardMetadata === null || wire.creditCardMetadata === undefined) {
-    return { mcc: null, billId: null, instalmentNumber: null, instalmentTotal: null, purchaseDate: null };
+    return {
+      mcc: null,
+      billId: null,
+      billForecastDate: null,
+      instalmentNumber: null,
+      instalmentTotal: null,
+      purchaseDate: null,
+    };
   }
 
   return cardMetadataDetails(wire.creditCardMetadata);
@@ -93,6 +100,7 @@ function cardMetadataDetails(metadata: CardMetadata): CardDetails {
   return {
     mcc: mccOf(metadata.payeeMCC),
     billId: stringOrNull(metadata.billId),
+    billForecastDate: stringOrNull(metadata.billForecastDate),
     instalmentNumber: numberOrNull(metadata.installmentNumber),
     instalmentTotal: numberOrNull(metadata.totalInstallments),
     purchaseDate: stringOrNull(metadata.purchaseDate),

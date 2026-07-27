@@ -1,0 +1,68 @@
+import { bill, billFixture } from "../fakes/bill-builder.ts";
+import { derived } from "../fakes/transaction-builder.ts";
+
+const ACCOUNT_ID = "materializing-card";
+
+export const materializingCard = billFixture({
+  accountId: ACCOUNT_ID,
+  utilizationCents: 9_000,
+  bills: [bill({ id: "materializing-closed", totalCents: 4_000 })],
+  rows: [
+    derived({
+      id: "materializing-renamed-history",
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: "2026-06-18T15:00:00.000Z",
+      localDate: "2026-06-18",
+      amountCents: -1_000,
+      description: "CLOUD MUSIC 7/12",
+      descriptionNorm: "CLOUD MUSIC",
+      billId: "materializing-closed",
+      instalmentNumber: 7,
+      instalmentTotal: 12,
+    }),
+    derived({
+      id: "materializing-prior-completion",
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: "2026-06-20T15:00:00.000Z",
+      localDate: "2026-06-20",
+      amountCents: -1_000,
+      description: "CLOUD MUSIC BR 12/12",
+      descriptionNorm: "CLOUD MUSIC BR",
+      billId: "materializing-closed",
+      instalmentNumber: 12,
+      instalmentTotal: 12,
+    }),
+    derived({
+      id: "materializing-open-8",
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: "2026-07-20T15:00:00.000Z",
+      localDate: "2026-07-20",
+      amountCents: -1_000,
+      description: "CLOUD MUSIC BR 8/12",
+      descriptionNorm: "CLOUD MUSIC BR",
+      billForecastDate: "2026-08",
+      instalmentNumber: 8,
+      instalmentTotal: 12,
+    }),
+    ...[9, 10, 11, 12].map((instalmentNumber) => derived({
+      id: `materializing-future-${instalmentNumber}`,
+      accountId: ACCOUNT_ID,
+      accountType: "CREDIT",
+      accountSubtype: "CREDIT_CARD",
+      occurredAt: `2026-${String(instalmentNumber).padStart(2, "0")}-20T15:00:00.000Z`,
+      localDate: `2026-${String(instalmentNumber).padStart(2, "0")}-20`,
+      amountCents: -1_000,
+      description: `CLOUD MUSIC BR ${instalmentNumber}/12`,
+      descriptionNorm: "CLOUD MUSIC BR",
+      billForecastDate: `2026-${String(instalmentNumber).padStart(2, "0")}`,
+      instalmentNumber,
+      instalmentTotal: 12,
+    })),
+  ],
+});

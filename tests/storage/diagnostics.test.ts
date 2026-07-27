@@ -45,7 +45,7 @@ describe("readLocalState", () => {
     assert.equal(state.perConnection.size, 0);
     assert.equal(state.snapshotRows, 0);
     assert.equal(state.counterpartyDocuments, 0);
-    assert.equal(state.cacheVersion, 2);
+    assert.equal(state.cacheVersion, 3);
   });
 
   it("seeds the MCC table via migration, so mccRows is non-zero even on a fresh database", () => {
