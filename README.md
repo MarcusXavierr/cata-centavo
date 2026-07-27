@@ -3,6 +3,7 @@
 <img src="https://github.com/user-attachments/assets/e990ea13-b266-4def-917f-afc15c1b4275" alt="cata-centavo" width="200" height="200">
 
 # Cata-centavo
+**Ask an agent about your own money.** Brazilian Open Finance data over [MCP](https://modelcontextprotocol.io), via [Pluggy](https://pluggy.ai).
 
 <p>
   <a href="https://www.npmjs.com/package/cata-centavo"><img src="https://img.shields.io/npm/v/cata-centavo?logo=npm&logoColor=white&color=cb3837" alt="npm version"></a>
