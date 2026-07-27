@@ -83,6 +83,8 @@ This is not an oversight. It is a deliberate security decision by Pluggy, who as
 
 **Decision:** Node 24 (`.nvmrc` = `v24.15.0`), TypeScript executed via native type stripping. No build step in development, no `tsx`, no `ts-node`.
 
+> **Amendment, 2026-07-27 — the published floor drops to Node 22.13; the development floor stays 24.** `engines` now reads `>=22.13.0`. Nothing above changes: `.nvmrc` remains `v24.15.0`, because type stripping is what buys the no-build-step development loop, and 22.13 has none of it — a `.ts` test file there dies with `ERR_UNKNOWN_FILE_EXTENSION`, and a whole-suite run reports `# tests 0` and exits 0, which is the silent green this file already warns about. The published package needs far less: it ships compiled `.js`, so its only hard requirement is `node:sqlite` unflagged. Measured by compiling `src` and `tests` to JavaScript and running the suite on each runtime (531 tests; the `tools/` set excluded because it reads repo-relative paths and fails everywhere off-root) — Node 20.13.1 and 22.5.0 cannot import `node:sqlite` at all, while **22.13.0, 22.20.0 and 24.15.0 each pass 531/531, identically**. The floor between 22.5.0 and 22.13.0 was not bisected; 22.13.0 is the lowest version tested, not the lowest that works. The `ExperimentalWarning` Node 22 prints for `node:sqlite` goes to stderr, so §4's stdout rule survives untouched. Node 20 stays unreachable, since it would take a native SQLite binding and §10 rules that out. CI gains a `[22, 24]` matrix and a job pinned to 22.13.0 that builds and runs the CLI — the floor is a promise `engines` makes to strangers, and no other job in the pipeline can test it.
+
 Verified on Node 24.15.0 with TypeScript 7.0.2:
 
 | Scenario | Result |
