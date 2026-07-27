@@ -1,5 +1,5 @@
 import type { CategoryId } from "./category.ts";
-import type { Transaction } from "./transaction.ts";
+import type { DerivedTransaction } from "./transaction.ts";
 
 /** One rolled-up category's signed total and the rows most useful for follow-up. */
 export type CategoryGroup = {
@@ -17,27 +17,46 @@ export type Aggregate = {
   readonly upcoming: { readonly totalCents: number; readonly count: number };
 };
 
+/**
+ * Moving money between your own accounts is not spending, and paying a card
+ * bill is not spending twice.
+ *
+ * These are leaves rather than groups because the distinction lives below the
+ * 22: `05100000` (credit card payment) is excluded while its parent `05000000`
+ * (Transfers) is ordinary spending. They are matched against the *durable*
+ * leaf — `DerivedTransaction.categoryId`, which falls back to the snapshot —
+ * so the exclusion outlives the enrichment.
+ */
 const SELF_TRANSFER_LEAVES: ReadonlySet<string> = new Set([
   "04000000", "04010000", "04020000", "04030000", "05100000",
 ]);
+
+/** A manual correction to Same person transfer excludes the row too. */
+const SELF_TRANSFER_GROUP = "04000000";
 
 type GroupState = {
   readonly categoryId: CategoryId | null;
   totalCents: number;
   count: number;
-  rows: Transaction[];
+  rows: DerivedTransaction[];
 };
 
-export function aggregate(
-  rows: readonly Transaction[],
-  rollup: ReadonlyMap<string, CategoryId>,
-  today: string,
-): Aggregate {
+/**
+ * Groups by the category the derivation resolved, not by the leaf Pluggy sent.
+ *
+ * Those are the same answer only while the enrichment is alive. Rolling the raw
+ * leaf up here instead would make a manual override invisible to the totals,
+ * and would report a whole wallet as uncategorized the day the plan drops to
+ * free — while the `categories` filter, which resolves the same rows in SQL,
+ * kept returning them. Two totals for one question is the failure the PRD's
+ * first rule names.
+ */
+export function aggregate(rows: readonly DerivedTransaction[], today: string): Aggregate {
   const groups = new Map<CategoryId | null, GroupState>();
   const totals = { spentCents: 0, receivedCents: 0, upcomingCents: 0, upcomingCount: 0 };
 
   for (const row of rows) {
-    addToGroup(groups, row, rollup);
+    addToGroup(groups, row);
     addToTotals(totals, row, today);
   }
 
@@ -49,12 +68,8 @@ export function aggregate(
   };
 }
 
-function addToGroup(
-  groups: Map<CategoryId | null, GroupState>,
-  row: Transaction,
-  rollup: ReadonlyMap<string, CategoryId>,
-): void {
-  const categoryId = rolledCategory(row.categoryId, rollup);
+function addToGroup(groups: Map<CategoryId | null, GroupState>, row: DerivedTransaction): void {
+  const categoryId = row.category;
   let group = groups.get(categoryId);
   if (group === undefined) {
     group = { categoryId, totalCents: 0, count: 0, rows: [] };
@@ -65,17 +80,6 @@ function addToGroup(
   group.rows.push(row);
 }
 
-function rolledCategory(categoryId: string | null, rollup: ReadonlyMap<string, CategoryId>): CategoryId | null {
-  if (categoryId === null) {
-    return null;
-  }
-  const root = rollup.get(categoryId);
-  if (root === undefined) {
-    throw new Error(`category ${categoryId} is absent from the taxonomy`);
-  }
-  return root;
-}
-
 type Totals = {
   spentCents: number;
   receivedCents: number;
@@ -83,13 +87,13 @@ type Totals = {
   upcomingCount: number;
 };
 
-function addToTotals(totals: Totals, row: Transaction, today: string): void {
+function addToTotals(totals: Totals, row: DerivedTransaction, today: string): void {
   if (row.localDate > today) {
     totals.upcomingCents += row.amountCents;
     totals.upcomingCount += 1;
     return;
   }
-  if (row.categoryId !== null && SELF_TRANSFER_LEAVES.has(row.categoryId)) {
+  if (isSelfTransfer(row)) {
     return;
   }
   if (row.amountCents < 0) {
@@ -99,6 +103,13 @@ function addToTotals(totals: Totals, row: Transaction, today: string): void {
   if (row.amountCents > 0) {
     totals.receivedCents += row.amountCents;
   }
+}
+
+function isSelfTransfer(row: DerivedTransaction): boolean {
+  if (row.category === SELF_TRANSFER_GROUP) {
+    return true;
+  }
+  return row.categoryId !== null && SELF_TRANSFER_LEAVES.has(row.categoryId);
 }
 
 function toCategoryGroup(group: GroupState): CategoryGroup {
@@ -111,7 +122,7 @@ function toCategoryGroup(group: GroupState): CategoryGroup {
   };
 }
 
-function compareSampleRows(left: Transaction, right: Transaction): number {
+function compareSampleRows(left: DerivedTransaction, right: DerivedTransaction): number {
   const amountDifference = Math.abs(right.amountCents) - Math.abs(left.amountCents);
   if (amountDifference !== 0) {
     return amountDifference;

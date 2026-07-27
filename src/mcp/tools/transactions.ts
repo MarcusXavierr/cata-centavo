@@ -4,10 +4,10 @@ import { z } from "zod";
 
 import { aggregate, type Aggregate, type CategoryGroup } from "../../core/aggregate.ts";
 import type { Account } from "../../core/account.ts";
-import { categoryById, isCategoryId } from "../../core/category.ts";
+import { categoryById, isCategoryFilterValue } from "../../core/category.ts";
 import { todayIn } from "../../core/date.ts";
-import { buildRollup } from "../../core/taxonomy.ts";
 import type { TransactionFilter } from "../../core/contracts.ts";
+
 import { toDecimal } from "../format.ts";
 import type { Source } from "../source.ts";
 import { configurationProblems, finishToolError, textResult, type ToolDeps } from "./result.ts";
@@ -20,11 +20,12 @@ Use this tool when:
 - You need to know how much was spent in a period, overall or in one category.
 - You need to compare categories or periods against each other.
 - You need transaction ids to look at individual rows afterwards.
+- You need to know how much is still uncategorized, by passing \`categories: ["none"]\`.
 
 Returns: \`spent\` and \`received\` as positive amounts, and one group per category with a signed total, a count and up to ten sample ids. Transfers between the user's own accounts and credit card bill payments are listed as groups but excluded from \`spent\` and \`received\`, because moving money between your own accounts is not spending. Instalments dated in the future are reported separately as \`upcoming\`. \`dataThrough\` states the most recent date each connection has actually supplied, which can trail its last sync by weeks.`;
 
 const dateInput = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "must be YYYY-MM-DD");
-const categoryInput = z.string().refine(isCategoryId, "must be a known category id");
+const categoryInput = z.string().refine(isCategoryFilterValue, 'must be a known category id, or "none" for uncategorized');
 const getTransactionsInput = z.object({
   startDate: dateInput,
   endDate: dateInput,
@@ -96,7 +97,7 @@ async function executeGetTransactions(options: ExecuteOptions): Promise<CallTool
       return currencyError(log, startedAt, loaded.accounts);
     }
 
-    const aggregateResult = await readAggregate({ source: deps.source, reader, input, accounts: loaded.accounts, clock: deps.clock });
+    const aggregateResult = readAggregate({ source: deps.source, reader, input, accounts: loaded.accounts, clock: deps.clock });
     const response = formatResponse({ result: aggregateResult.result, input, currency, accounts: loaded.accounts, reader, today: aggregateResult.today });
 
     log.info({ durationMs: Date.now() - startedAt, outcome: "ok", rows: aggregateResult.rows }, "getTransactions finished");
@@ -187,13 +188,13 @@ type AggregateResult = {
   readonly today: string;
 };
 
-async function readAggregate(options: AggregateOptions): Promise<AggregateResult> {
+function readAggregate(options: AggregateOptions): AggregateResult {
   const filter = toFilter(options.input, options.accounts);
   const rows = options.reader.query(filter);
-  const taxonomy = buildRollup(await options.source.bank.getCategories());
   const today = todayIn(options.clock);
-  return { result: aggregate(rows, taxonomy, today), rows: rows.length, today };
+  return { result: aggregate(rows, today), rows: rows.length, today };
 }
+
 
 type FormatResponseOptions = {
   readonly result: Aggregate;

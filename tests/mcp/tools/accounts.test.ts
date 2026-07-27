@@ -28,11 +28,14 @@ function message(result: { readonly content: readonly { readonly type: string; r
 
 function deps(source: Source, log: ReturnType<typeof fakeLogger>) {
   let reader = null;
+  let writer = null;
   if (source.ok) {
     reader = source.reader;
+    writer = source.writer;
   }
-  return { source, log, reader, clock: { now: () => new Date() } };
+  return { source, log, reader, writer, clock: { now: () => new Date() } };
 }
+
 
 describe("MCP account tools", () => {
   const log = fakeLogger();

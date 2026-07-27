@@ -1,4 +1,6 @@
 import type { AccountType } from "./account.ts";
+import type { ResolvedCategory } from "./category-source.ts";
+
 
 /**
  * A transaction as we speak of it, which is not as Pluggy speaks of it (ADR §14.0).
@@ -44,3 +46,7 @@ export type Transaction = {
   readonly instalmentTotal: number | null;
   readonly purchaseDate: string | null;
 };
+
+/** A cached transaction plus the category the derivation resolved for it. */
+export type DerivedTransaction = Transaction & ResolvedCategory;
+

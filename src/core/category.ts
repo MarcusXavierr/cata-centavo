@@ -66,6 +66,18 @@ export function isCategoryId(value: string): value is CategoryId {
   return BY_ID.has(value);
 }
 
+/**
+ * What a read tool's `categories` filter accepts: one of the 22, or `"none"`
+ * for the rows the derivation could not categorize.
+ *
+ * `"none"` exists because after the enrichment stops, "show me what has no
+ * category so I can fix it" is the workflow, and the aggregate's null group
+ * samples ten ids rather than listing them (design D6).
+ */
+export function isCategoryFilterValue(value: string): value is CategoryId | "none" {
+  return value === "none" || isCategoryId(value);
+}
+
 /** The category behind an id, or `undefined` when the id is not one of ours. */
 export function categoryById(id: string): Category | undefined {
   return BY_ID.get(id);

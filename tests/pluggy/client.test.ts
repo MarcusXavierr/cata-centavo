@@ -122,42 +122,6 @@ function endlessPageResponder(): Handler {
   };
 }
 
-function categoryResponder(): Handler {
-  return (request) => {
-    if (isAuth(request)) {
-      return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
-    }
-
-    return json({
-      results: [{ id: "01000000", description: "Income", parentId: null }],
-      total: 1,
-      totalPages: 1,
-      page: 1,
-    });
-  };
-}
-
-function failingThenWorkingCategories(): Handler {
-  let categoryCalls = 0;
-  return (request) => {
-    if (isAuth(request)) {
-      return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
-    }
-
-    categoryCalls += 1;
-    if (categoryCalls === 1) {
-      return json({ message: "temporarily unavailable" }, 503);
-    }
-
-    return json({
-      results: [{ id: "01000000", description: "Income", parentId: null }],
-      total: 1,
-      totalPages: 1,
-      page: 1,
-    });
-  };
-}
-
 type Harness = {
   readonly client: ReturnType<typeof createPluggyClient>;
   readonly fetch: FakeFetch;
@@ -281,21 +245,7 @@ describe("createPluggyClient", () => {
     await assert.rejects(() => client.getTransactions(TRANSACTION_ACCOUNT), /500/u);
   });
 
-  it("getCategories is fetched once per client and reused", async () => {
-    const { client, fetch } = harness({ responder: categoryResponder(), limiter: { acquire: async () => {} } });
 
-    await client.getCategories();
-    await client.getCategories();
-
-    assert.equal(fetch.requests.filter((request) => request.url.includes("/categories")).length, 1);
-  });
-
-  it("a failed getCategories is not cached", async () => {
-    const { client } = harness({ responder: failingThenWorkingCategories(), limiter: { acquire: async () => {} } });
-
-    await assert.rejects(() => client.getCategories());
-    assert.equal((await client.getCategories()).length, 1);
-  });
 
   it("performs no I/O when constructed", () => {
     const { fetch } = harness();

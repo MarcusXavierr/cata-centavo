@@ -309,6 +309,20 @@ Pluggy syncs with the banks daily on its own, and batch processes against the AP
 
 **Decision in one sentence:** a transaction's category is **not stored**. It is derived at read time, inside a single SQL query, from three independent lookups in V1 — override, counterparty, MCC — and from those plus a specificity-ranked rule engine in V2. The server never calls an LLM.
 
+> **Amendment, 2026-07-26 — built as a harvest, and the chain has six branches, not three.** The account owner learned the plan drops to free in roughly fifteen days, which moved §12 from dormant (see §12.1's amendment) to urgent and changed its shape. The damage was never "new rows arrive uncategorized": `replaceAccount` is a full replace whose upsert sets `category_id = excluded.category_id`, so the first walk after the window overwrites today's 99.7% with `NULL`, and `cache.db` is droppable by policy. **The coverage was perishable, and it was the history that perished.**
+>
+> So Phase 3 is: harvest the enrichment into storage that is never dropped, while it still exists, then serve from the harvest. What changed against the design below:
+>
+> - **Six branches.** "What Pluggy said" exists twice — live in `cache.db`, remembered in `data.db.category_snapshot`. Manual correction beats Pluggy; the harvest loses to Pluggy, because it was derived from it. Both report `categorySrc: "pluggy"`.
+> - **The roll-up moved to write time**, into a new `transactions.top_category_id`. §12.3's premise that SQL joins the taxonomy is gone: every branch emits one of the 22, so the filter compares one vocabulary against itself. This fixed a live bug — `categories: ["11000000"]` matched the leaf column and silently excluded every row tagged `11010000`, while the unfiltered call rolled those same rows into that group. Two totals for one question, which is PRD item 1.
+> - **The 130-entry tree ships as code** (`src/core/taxonomy-tree.ts`), not as a `cache.db` seed. `GET /categories` was a second per-read network dependency with the same tier exposure; `Bank.getCategories` is deleted. An unknown leaf now yields `top_category_id = NULL` and a warning instead of throwing, because a tree shipped as code is out of date by construction.
+> - **CPF is never learned**, only CNPJ, and only on a true majority (`agreeing * 2 > samples`). 278 of the 366 documents in the wallet are CPFs. "This CPF is Transfers" applied retroactively to every transfer to your brother is the same class of failure the rest of this ADR exists to prevent.
+> - **The learned map is personal** and never committed. `mcc.ts` is universal and ships; a CNPJ map is a line of somebody's statement. Consequence, stated in the README: whoever installs after their own window closes has an empty map with nothing to harvest from.
+> - **`data.db` is `ATTACH`ed onto the `cache.db` connection** as `userdata`. One connection is what lets the derivation read both files in one statement and the harvest write inside the walk's transaction. Caveat worth knowing: SQLite's cross-database atomic commit does not hold under WAL, which we enable. It is survivable only because the snapshot never deletes and never writes a `NULL` over a value.
+> - **`"none"` is legal in the `categories` filter.** After the window the primary workflow is "show me what has no category so I can fix it", and no tool could express it.
+>
+> §12.3's V1/V2 SQL is superseded by `src/storage/category-sql.ts`. The full reasoning is in `docs/plans/2026-07-26-phase-3-categories-design.md`; the implementation steps are in the plan beside it.
+
 ### 12.1 Why this is our problem
 
 Pluggy's free tier (Connector 200 / MeuPluggy) excludes the enrichment block. Verified against `pluggy-sdk@0.90.0`:

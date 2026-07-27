@@ -1,6 +1,5 @@
 import type { Account } from "../../src/core/account.ts";
 import type { Bank, Connection } from "../../src/core/contracts.ts";
-import type { TaxonomyEntry } from "../../src/core/taxonomy.ts";
 import type { Transaction } from "../../src/core/transaction.ts";
 import { AuthError, NotFoundError } from "../../src/pluggy/errors.ts";
 
@@ -8,7 +7,6 @@ export type FakeBankOptions = {
   readonly connections?: readonly Connection[];
   readonly accounts?: Readonly<Record<string, readonly Account[]>>;
   readonly transactions?: Readonly<Record<string, readonly Transaction[]>>;
-  readonly categories?: readonly TaxonomyEntry[];
   /** When set, `verifyCredentials` rejects with an `AuthError` carrying it. */
   readonly credentialsRejected?: string;
   /** Ids that fail with something other than "not found". */
@@ -28,16 +26,8 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
   const connections = options.connections ?? [];
   const accounts = options.accounts ?? {};
   const transactions = options.transactions ?? {};
-  const categories = options.categories ?? [
-    { id: "01000000", parentId: null },
-    { id: "04000000", parentId: null },
-    { id: "05000000", parentId: null },
-    { id: "05020000", parentId: "05000000" },
-    { id: "05100000", parentId: "05000000" },
-    { id: "09000000", parentId: null },
-    { id: "11000000", parentId: null },
-  ];
   const unreachable = options.unreachable ?? {};
+
   const calls: string[] = [];
 
   function answer(id: string): Connection {
@@ -95,13 +85,9 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
       throwIfUnreachable(account.connectionId);
       return transactions[account.id] ?? [];
     },
-
-    getCategories: async () => {
-      calls.push("categories");
-      return categories;
-    },
   };
 }
+
 
 /** A connection in the state a healthy, freshly synced one comes back in. */
 export function connection(id: string, overrides: Partial<Connection> = {}): Connection {

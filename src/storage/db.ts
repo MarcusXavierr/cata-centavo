@@ -5,6 +5,20 @@ import { DatabaseSync } from "node:sqlite";
 import type { Paths } from "../config.ts";
 import { CACHE_MIGRATIONS, DATA_MIGRATIONS, type Migration } from "./migrations.ts";
 
+const MAIN = "main";
+
+/** `PRAGMA` and `ATTACH … AS` take no bound parameters, which is why this exists. */
+function quoteSchema(schema: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/u.test(schema)) {
+    throw new Error(`refusing to interpolate an unsafe schema name: ${schema}`);
+  }
+  return schema;
+}
+
+function escapeLiteral(str: string): string {
+  return str.replaceAll("'", "''");
+}
+
 /**
  * One step forward. `up` is executed as-is, and `to` becomes the file's
  * `PRAGMA user_version` once it commits. ADR §10 versions both files this way,
@@ -59,8 +73,16 @@ export function openDatabase(options: OpenOptions): DatabaseSync {
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA foreign_keys = ON");
 
-    migrate(db, options);
+    migrateSchema(db, options, MAIN);
+
+    if (options.path === ":memory:" && options.migrations === CACHE_MIGRATIONS) {
+      db.exec("ATTACH DATABASE ':memory:' AS userdata");
+      for (const m of DATA_MIGRATIONS) {
+        db.exec(m.up.replace(/CREATE TABLE /gi, "CREATE TABLE userdata."));
+      }
+    }
   } catch (error) {
+
     db.close();
     throw error;
   }
@@ -69,44 +91,47 @@ export function openDatabase(options: OpenOptions): DatabaseSync {
 }
 
 export type Databases = {
-  readonly cache: DatabaseSync;
-  readonly data: DatabaseSync;
+  /** One connection. `main` is cache.db; `userdata` is data.db. */
+  readonly db: DatabaseSync;
   close(): void;
 };
 
-/** The two files of ADR §10, opened under the policy each one earns. */
+/**
+ * The two files of ADR §10 on one connection.
+ *
+ * They share a connection because Phase 3's derivation resolves a category by
+ * reading both in one statement, and because the harvest writes the snapshot
+ * inside the walk's transaction. Two handles cannot see each other and cannot
+ * do either.
+ */
 export function openDatabases(paths: Paths): Databases {
-  const cache = openDatabase({ path: paths.cacheDb, migrations: CACHE_MIGRATIONS, policy: "rebuild" });
+  const dataDb = openDatabase({ path: paths.dataDb, migrations: DATA_MIGRATIONS, policy: "migrate" });
+  dataDb.close();
 
-  let data: DatabaseSync;
+  const db = openDatabase({ path: paths.cacheDb, migrations: CACHE_MIGRATIONS, policy: "rebuild" });
+
   try {
-    data = openDatabase({ path: paths.dataDb, migrations: DATA_MIGRATIONS, policy: "migrate" });
+    db.exec(`ATTACH DATABASE '${escapeLiteral(paths.dataDb)}' AS userdata`);
   } catch (error) {
-    cache.close();
+    db.close();
     throw error;
   }
 
-  return {
-    cache,
-    data,
-    close: () => {
-      cache.close();
-      data.close();
-    },
-  };
+  return { db, close: () => db.close() };
 }
 
-function migrate(db: DatabaseSync, options: OpenOptions): void {
+
+function migrateSchema(db: DatabaseSync, options: OpenOptions, schema: string = MAIN): void {
   const target = targetVersion(options.migrations);
-  const current = readUserVersion(db);
+  const current = readUserVersion(db, schema);
 
   if (current === target) {
     return;
   }
 
   if (options.policy === "rebuild") {
-    dropEverything(db);
-    apply(db, options.migrations, 0);
+    dropEverything(db, schema);
+    apply(db, options.migrations, 0, schema);
     return;
   }
 
@@ -114,7 +139,7 @@ function migrate(db: DatabaseSync, options: OpenOptions): void {
     throw new SchemaTooNewError(options.path, current, target);
   }
 
-  apply(db, options.migrations, current);
+  apply(db, options.migrations, current, schema);
 }
 
 export function targetVersion(migrations: readonly Migration[]): number {
@@ -126,7 +151,7 @@ export function targetVersion(migrations: readonly Migration[]): number {
  * last version that actually committed rather than at a version it never
  * reached.
  */
-function apply(db: DatabaseSync, migrations: readonly Migration[], from: number): void {
+function apply(db: DatabaseSync, migrations: readonly Migration[], from: number, schema: string = MAIN): void {
   for (const migration of migrations) {
     if (migration.to <= from) {
       continue;
@@ -135,7 +160,7 @@ function apply(db: DatabaseSync, migrations: readonly Migration[], from: number)
     db.exec("BEGIN");
     try {
       db.exec(migration.up);
-      stamp(db, migration.to);
+      stamp(db, schema, migration.to);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -144,8 +169,9 @@ function apply(db: DatabaseSync, migrations: readonly Migration[], from: number)
   }
 }
 
-function dropEverything(db: DatabaseSync): void {
-  const objects = db.prepare("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").all();
+function dropEverything(db: DatabaseSync, schema: string = MAIN): void {
+  const safeSchema = quoteSchema(schema);
+  const objects = db.prepare(`SELECT type, name FROM ${safeSchema}.sqlite_master WHERE name NOT LIKE 'sqlite_%'`).all();
 
   db.exec("PRAGMA foreign_keys = OFF");
   for (const object of objects) {
@@ -153,23 +179,23 @@ function dropEverything(db: DatabaseSync): void {
     const name = String(object["name"]).replaceAll('"', '""');
 
     if (type === "table") {
-      db.exec(`DROP TABLE IF EXISTS "${name}"`);
+      db.exec(`DROP TABLE IF EXISTS ${safeSchema}."${name}"`);
     } else if (type === "view") {
-      db.exec(`DROP VIEW IF EXISTS "${name}"`);
+      db.exec(`DROP VIEW IF EXISTS ${safeSchema}."${name}"`);
     }
   }
   db.exec("PRAGMA foreign_keys = ON");
 
-  stamp(db, 0);
+  stamp(db, schema, 0);
 }
 
 /** The `PRAGMA user_version` a file currently carries. */
-export function schemaVersion(db: DatabaseSync): number {
-  return readUserVersion(db);
+export function schemaVersion(db: DatabaseSync, schema: string = MAIN): number {
+  return readUserVersion(db, schema);
 }
 
-function readUserVersion(db: DatabaseSync): number {
-  const value = db.prepare("PRAGMA user_version").get()?.["user_version"];
+function readUserVersion(db: DatabaseSync, schema: string = MAIN): number {
+  const value = db.prepare(`PRAGMA ${quoteSchema(schema)}.user_version`).get()?.["user_version"];
   const version = Number(value);
   if (Number.isInteger(version)) {
     return version;
@@ -178,11 +204,11 @@ function readUserVersion(db: DatabaseSync): number {
 }
 
 /** `PRAGMA` takes no bound parameters, which is why the guard is here. */
-function stamp(db: DatabaseSync, version: number): void {
+function stamp(db: DatabaseSync, schema: string, version: number): void {
   if (!Number.isInteger(version) || version < 0) {
     throw new Error(`refusing to stamp a non-integer schema version: ${version}`);
   }
-  db.exec(`PRAGMA user_version = ${version}`);
+  db.exec(`PRAGMA ${quoteSchema(schema)}.user_version = ${version}`);
 }
 
 /**

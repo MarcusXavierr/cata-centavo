@@ -7,9 +7,9 @@ import type { ToolDeps } from "../../../src/mcp/tools/result.ts";
 import { fakeLogger } from "../../fakes/fake-logger.ts";
 import { account, connection } from "../../fakes/fake-bank.ts";
 import { fakeSource } from "../../fakes/fake-source.ts";
-import { tx } from "../../fakes/transaction-builder.ts";
+import { derived } from "../../fakes/transaction-builder.ts";
 
-function depsWith(rows: readonly ReturnType<typeof tx>[]): ToolDeps {
+function depsWith(rows: readonly ReturnType<typeof derived>[]): ToolDeps {
   const source = fakeSource({ connections: [connection("conn-1")], accounts: { "conn-1": [account("acc-1")] } });
   const reader: TransactionReader = {
     load: async () => ({ accounts: [account("acc-1")], unavailable: [] }),
@@ -17,8 +17,9 @@ function depsWith(rows: readonly ReturnType<typeof tx>[]): ToolDeps {
     byIds: (ids) => rows.filter((row) => ids.includes(row.id)),
     dataThrough: () => new Map(),
   };
-  return { source, reader, clock: { now: () => new Date("2026-07-01T12:00:00.000Z") }, log: fakeLogger() };
+  return { source, reader, writer: source.writer, clock: { now: () => new Date("2026-07-01T12:00:00.000Z") }, log: fakeLogger() };
 }
+
 
 function textOf(result: { readonly content: readonly { readonly type: string; readonly text?: string }[] }): string {
   const first = result.content[0];
@@ -28,9 +29,9 @@ function textOf(result: { readonly content: readonly { readonly type: string; re
   return first.text;
 }
 
-function seededRows(): readonly ReturnType<typeof tx>[] {
+function seededRows(): readonly ReturnType<typeof derived>[] {
   return [
-    tx({
+    derived({
       id: "t-card-1",
       accountType: "CREDIT",
       accountSubtype: "CREDIT_CARD",
@@ -46,8 +47,8 @@ function seededRows(): readonly ReturnType<typeof tx>[] {
       instalmentTotal: 12,
       purchaseDate: "2026-04-15",
     }),
-    tx({ id: "t-bank-1", instalmentNumber: null, instalmentTotal: null }),
-    tx({
+    derived({ id: "t-bank-1", instalmentNumber: null, instalmentTotal: null }),
+    derived({
       id: "t-card-foreign",
       accountType: "CREDIT",
       amountCents: -2_500,
@@ -68,6 +69,16 @@ describe("getTransactionDetails", () => {
     assert.equal(detail.instalment.total, 12);
     assert.equal(detail.counterparty.document, "12345678000199");
     assert.equal(detail.counterparty.name, "Shop Ltda");
+  });
+
+  it("reports the derived category and where it came from, beside the leaf", async () => {
+    const rows = [derived({ id: "t-1", categoryId: "11010000", category: "11000000", categorySrc: "learned" })];
+    const result = await handleGetTransactionDetails(depsWith(rows), { ids: ["t-1"] });
+    const [detail] = JSON.parse(textOf(result)).transactions;
+
+    assert.equal(detail.category, "11000000");
+    assert.equal(detail.categorySrc, "learned");
+    assert.equal(detail.categoryId, "11010000");
   });
 
   it("returns money as a decimal string", async () => {
@@ -107,7 +118,7 @@ describe("getTransactionDetails", () => {
   for (const { name, count, ok } of ID_COUNT_CASES) {
     it(`enforces the id count: ${name}`, async () => {
       const ids = Array.from({ length: count }, (_, index) => `t-${index}`);
-      const result = await handleGetTransactionDetails(depsWith(ids.map((id) => tx({ id }))), { ids });
+      const result = await handleGetTransactionDetails(depsWith(ids.map((id) => derived({ id }))), { ids });
 
       assert.equal(result.isError !== true, ok);
     });

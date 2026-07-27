@@ -1,4 +1,4 @@
-import type { Bank, BankFailure } from "../core/contracts.ts";
+import type { Bank, BankFailure, CategoryWriter } from "../core/contracts.ts";
 import type { TransactionReader } from "../core/transactions.ts";
 
 /** The configured bank source, or the configuration problems that prevent it. */
@@ -9,7 +9,9 @@ export type Source =
       readonly bank: Bank;
       readonly toFailure: (error: unknown) => BankFailure;
       readonly reader: TransactionReader;
+      readonly writer: CategoryWriter;
     }
+
   | {
       readonly ok: false;
       readonly problems: readonly string[];

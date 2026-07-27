@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import type { TransactionFilter } from "../../src/core/contracts.ts";
+import type { Logger, TransactionFilter } from "../../src/core/contracts.ts";
+
 import { openDatabase } from "../../src/storage/db.ts";
 import { CACHE_MIGRATIONS } from "../../src/storage/migrations.ts";
 import { createTransactionStore } from "../../src/storage/transactions.ts";
+import { fakeLogger } from "../fakes/fake-logger.ts";
 import { tx } from "../fakes/transaction-builder.ts";
 
 /** Seven rows chosen so each filter selects a disjoint, named subset. */
@@ -20,10 +22,15 @@ const SEED = [
 
 const WIDE_FILTER: TransactionFilter = { accountIds: ["acc-bank", "acc-card"], from: "2000-01-01", to: "2100-01-01" };
 
-function storeFor() {
+function storeAndDbFor(log: Logger = fakeLogger()) {
   const db = openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" });
-  return createTransactionStore(db);
+  return { store: createTransactionStore(db, log), db };
 }
+
+function storeFor(log: Logger = fakeLogger()) {
+  return storeAndDbFor(log).store;
+}
+
 
 function seededStore() {
   const store = storeFor();
@@ -103,8 +110,13 @@ describe("replaceAccount", () => {
 
     store.replaceAccount("acc-1", "conn-1", [row], null);
 
-    assert.deepEqual(store.query(filterFor(["acc-1"]))[0], row);
+    assert.deepEqual(store.query(filterFor(["acc-1"]))[0], {
+      ...row,
+      category: "01000000",
+      categorySrc: "pluggy",
+    });
   });
+
 });
 
 describe("syncedLastUpdatedAt", () => {
@@ -129,8 +141,8 @@ describe("syncedLastUpdatedAt", () => {
 describe("query", () => {
   const QUERY_CASES: readonly { readonly name: string; readonly filter: Partial<TransactionFilter>; readonly ids: readonly string[] }[] = [
     { name: "bounds the range inclusively at both ends", filter: { from: "2026-06-01", to: "2026-06-30" }, ids: ["jun-30", "jun-1"] },
-    { name: "filters by leaf category", filter: { categories: ["11000000"] }, ids: ["food"] },
     { name: "filters by several categories", filter: { categories: ["11000000", "01000000"] }, ids: ["income", "food"] },
+
     { name: "filters by minimum signed amount", filter: { minAmountCents: -5_000 }, ids: ["jul", "jun-30", "jun-1", "may", "income"] },
     { name: "filters by maximum signed amount", filter: { maxAmountCents: -5_000 }, ids: ["card", "food"] },
     { name: "filters by account type", filter: { accountType: "CREDIT" }, ids: ["card"] },
@@ -197,3 +209,36 @@ describe("dataThrough", () => {
     assert.equal(seededStore().dataThrough([], "2026-07-26").size, 0);
   });
 });
+
+describe("top_category_id write-time roll-up", () => {
+  it("stores the top-level ancestor of the leaf Pluggy sent", () => {
+    const { store, db } = storeAndDbFor();
+    store.replaceAccount("acc-1", "conn-1", [tx({ id: "a", categoryId: "11010000" })], null);
+
+    const row = db.prepare("SELECT top_category_id FROM transactions WHERE id = 'a'").get();
+    assert.equal(row?.["top_category_id"], "11000000");
+  });
+
+  it("keeps the leaf and warns when the tree does not know it, instead of failing the walk", () => {
+    const log = fakeLogger();
+    const { store, db } = storeAndDbFor(log);
+
+    store.replaceAccount("acc-1", "conn-1", [tx({ id: "a", categoryId: "77770000" })], null);
+
+    const row = db.prepare("SELECT category_id, top_category_id FROM transactions WHERE id = 'a'").get();
+    assert.equal(row?.["category_id"], "77770000");
+    assert.equal(row?.["top_category_id"], null);
+    assert.ok(log.lines.some((line) => line.level === "warn" && line.message.includes("category")));
+  });
+
+  it("stores no top-level category for an uncategorized row", () => {
+    const { store, db } = storeAndDbFor();
+
+    store.replaceAccount("acc-1", "conn-1", [tx({ id: "a", categoryId: null })], null);
+
+    const row = db.prepare("SELECT category_id, top_category_id FROM transactions WHERE id = 'a'").get();
+    assert.equal(row?.["category_id"], null);
+    assert.equal(row?.["top_category_id"], null);
+  });
+});
+

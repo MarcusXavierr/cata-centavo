@@ -8,10 +8,17 @@ import { fakeBank, threeConnections } from "./fake-bank.ts";
 import type { FakeBank, FakeBankOptions } from "./fake-bank.ts";
 import { fakeLogger } from "./fake-logger.ts";
 
-export type FakeSourceOptions = Pick<FakeBankOptions, "accounts" | "connections" | "unreachable" | "transactions" | "categories">;
+import type { CategoryWriter } from "../../src/core/contracts.ts";
+
+export type FakeSourceOptions = Pick<FakeBankOptions, "accounts" | "connections" | "unreachable" | "transactions">;
 
 export type FakeSource = Extract<Source, { readonly ok: true }> & {
   readonly bank: FakeBank;
+};
+
+const dummyWriter: CategoryWriter = {
+  setCategory: () => ({ updated: 0, unknownIds: [] }),
+  setCounterpartyCategory: () => ({ affected: 0 }),
 };
 
 /** A ready MCP source backed by the standard three-connection bank fixture. */
@@ -27,13 +34,12 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     unreachableField = { unreachable: options.unreachable };
   }
 
-  let transactionFields: Pick<FakeBankOptions, "transactions" | "categories"> = {};
+  let transactionFields: Pick<FakeBankOptions, "transactions"> = {};
   if (options.transactions !== undefined) {
     transactionFields = { ...transactionFields, transactions: options.transactions };
   }
-  if (options.categories !== undefined) {
-    transactionFields = { ...transactionFields, categories: options.categories };
-  }
+
+
 
   const bank = fakeBank({
     connections,
@@ -41,7 +47,11 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     ...unreachableField,
     ...transactionFields,
   });
-  const store = createTransactionStore(openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" }));
+  const store = createTransactionStore(
+    openDatabase({ path: ":memory:", migrations: CACHE_MIGRATIONS, policy: "rebuild" }),
+    fakeLogger(),
+  );
+
   const reader = createTransactionReader({ bank, store, toFailure, log: fakeLogger() });
 
   return {
@@ -50,5 +60,7 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     bank,
     toFailure,
     reader,
+    writer: dummyWriter,
   };
 }
+

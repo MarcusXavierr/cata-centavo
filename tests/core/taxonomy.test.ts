@@ -1,8 +1,51 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, it, test } from "node:test";
 
-import { CATEGORIES } from "../../src/core/category.ts";
-import { buildRollup, type TaxonomyEntry } from "../../src/core/taxonomy.ts";
+import { CATEGORY_IDS, CATEGORIES } from "../../src/core/category.ts";
+import { buildRollup, topCategoryOf, type TaxonomyEntry } from "../../src/core/taxonomy.ts";
+import { TAXONOMY } from "../../src/core/taxonomy-tree.ts";
+
+describe("the shipped taxonomy", () => {
+  it("carries every entry Pluggy served", () => {
+    assert.equal(TAXONOMY.length, 130);
+  });
+
+  it("has exactly the 22 top-level categories as roots", () => {
+    const roots = TAXONOMY.filter((entry) => entry.parentId === null).map((entry) => entry.id);
+    assert.deepEqual([...roots].sort(), [...CATEGORY_IDS].sort());
+  });
+
+  it("rolls every entry up to one of the 22", () => {
+    for (const entry of TAXONOMY) {
+      assert.ok(CATEGORY_IDS.includes(topCategoryOf(entry.id) as never), `${entry.id} did not roll up`);
+    }
+  });
+
+  it("keeps the three misfiled financing entries under Loans and financing", () => {
+    for (const id of ["02030001", "02030002", "02030003"]) {
+      assert.equal(topCategoryOf(id), "02000000");
+    }
+  });
+
+  it("keeps the four nine-digit insurance children under Insurance", () => {
+    for (const id of ["200100000", "200200000", "200300000", "200400000"]) {
+      assert.equal(topCategoryOf(id), "20000000");
+    }
+  });
+
+  const LOOKUP_CASES: readonly { readonly name: string; readonly id: string | null; readonly root: string | null }[] = [
+    { name: "a leaf resolves to its root", id: "11010000", root: "11000000" },
+    { name: "a root resolves to itself", id: "11000000", root: "11000000" },
+    { name: "an id Pluggy added after this release resolves to nothing", id: "77770000", root: null },
+    { name: "no category resolves to nothing", id: null, root: null },
+  ];
+
+  for (const { name, id, root } of LOOKUP_CASES) {
+    it(name, () => {
+      assert.equal(topCategoryOf(id), root);
+    });
+  }
+});
 
 const ENTRIES: readonly TaxonomyEntry[] = [
   { id: "07000000", parentId: null },
@@ -75,3 +118,4 @@ test("every top-level category is its own root", () => {
     assert.equal(rollup.get(category.id), category.id);
   }
 });
+
