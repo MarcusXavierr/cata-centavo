@@ -1,6 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import type { CategoryWriter, Clock, Logger } from "../../core/contracts.ts";
+import type { CategoryWriter, Clock, ClosingDayStore, Logger } from "../../core/contracts.ts";
 
 import type { TransactionReader } from "../../core/transactions.ts";
 import { prune } from "../format.ts";
@@ -11,6 +11,7 @@ export type ToolDeps = {
   readonly log: Logger;
   readonly reader: TransactionReader | null;
   readonly writer: CategoryWriter | null;
+  readonly closingDays?: ClosingDayStore | null;
   readonly clock: Clock;
 };
 

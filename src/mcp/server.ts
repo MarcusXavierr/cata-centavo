@@ -5,6 +5,11 @@ import type { ToolDeps } from "./tools/result.ts";
 import type { Source } from "./source.ts";
 import { registerGetAccounts, registerGetBalanceByAccount } from "./tools/accounts.ts";
 import { registerGetBalance } from "./tools/balance.ts";
+import {
+  registerDeleteClosingDay,
+  registerListClosingDays,
+  registerSetClosingDay,
+} from "./tools/closing-days.ts";
 import { registerListSources } from "./tools/sources.ts";
 import { registerGetTransactionDetails } from "./tools/transaction-details.ts";
 import { registerGetTransactions, registerListTransactions } from "./tools/transactions.ts";
@@ -36,20 +41,23 @@ const REGISTRARS: readonly ((server: McpServer, deps: ToolDeps) => void)[] = [
   registerGetTransactionDetails,
   registerSetCategory,
   registerSetCounterpartyCategory,
+  registerListClosingDays,
+  registerSetClosingDay,
+  registerDeleteClosingDay,
   registerListSources,
 ];
 
 function toolDeps(options: { readonly source: Source; readonly log: Logger }): ToolDeps {
   const clock: Clock = { now: () => new Date() };
   if (!options.source.ok) {
-    return { source: options.source, log: options.log, reader: null, writer: null, clock };
+    return { source: options.source, log: options.log, reader: null, writer: null, closingDays: null, clock };
   }
   return {
     source: options.source,
     log: options.log,
     reader: options.source.reader,
     writer: options.source.writer,
+    closingDays: options.source.closingDays ?? null,
     clock,
   };
 }
-
