@@ -250,6 +250,7 @@ describe("getBillSummary", () => {
       id: "open-bill",
       closingDate: "2026-08-08",
       dueDate: "2026-08-15",
+      totalCents: 2_050,
     });
     const rows = [
       cardRow({ id: "small", amountCents: -100, description: "Small" }),
@@ -322,6 +323,30 @@ describe("getBillSummary", () => {
     });
   });
 
+  it("uses the published open bill total when its rows include a payment the bank excludes", async () => {
+    const card = summaryCard({ amountCents: 26_550 });
+    const rows = [
+      cardRow({ id: "purchase", amountCents: -26_550 }),
+      cardRow({ id: "payment", amountCents: 26_550, categoryId: "08000000" }),
+    ];
+    const fixture = readerFixture({ accounts: [card], rows });
+    const source = sourceForCard(card, [
+      bill({ id: "open-bill", closingDate: null, dueDate: "2026-08-15", totalCents: 26_550 }),
+    ]);
+
+    const result = await handleGetBillSummary(
+      depsWith(source, {
+        reader: fixture.reader,
+        closingDays: closingDays([]),
+        clock: fixedClock(new Date("2026-07-26T12:00:00.000Z")),
+      }),
+      { accountId: card.id },
+    );
+    const actual = payload(result) as Record<string, unknown>;
+
+    assert.equal(actual["posted"], "265.50");
+  });
+
   it("uses the locally stored closing day when the bank publishes no bills or cycle dates", async () => {
     const card = summaryCard();
     const rows = [cardRow({ id: "local-cycle", amountCents: -100, billId: null, billForecastDate: "2026-07" })];
@@ -352,7 +377,7 @@ describe("getBillSummary", () => {
     ];
     const fixture = readerFixture({ accounts: [card], rows });
     const source = sourceForCard(card, [
-      bill({ id: "open-bill", closingDate: "2026-08-08", dueDate: "2026-08-15" }),
+      bill({ id: "open-bill", closingDate: "2026-08-08", dueDate: "2026-08-15", totalCents: 500 }),
     ]);
 
     const result = await handleGetBillSummary(

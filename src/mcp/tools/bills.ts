@@ -333,7 +333,7 @@ function formatDerivedFigures(
     openBillId = newestBill(bills)?.id ?? null;
   }
   const partition = partitionBillRows(rows, openCycle.openCycle, openBillId);
-  const postedCents = derivePostedCents(partition.openCycleRows);
+  const postedCents = postedFor(openCycle, bills, partition.openCycleRows);
   const commitment = deriveBillCommitment(partition, account.amountCents);
 
   return {
@@ -345,6 +345,17 @@ function formatDerivedFigures(
     postedExceedsCommitted: postedCents > commitment.committedCents,
     topTransactions: topTransactions(partition.openCycleRows),
   };
+}
+
+function postedFor(
+  openCycle: OpenCycle,
+  bills: readonly Bill[],
+  rows: readonly DerivedTransaction[],
+): number {
+  if (openCycle.source === ClosingDateSource.openBill) {
+    return newestBill(bills)?.totalCents ?? derivePostedCents(rows);
+  }
+  return derivePostedCents(rows);
 }
 
 function topTransactions(rows: readonly DerivedTransaction[]): readonly unknown[] {

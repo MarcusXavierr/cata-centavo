@@ -176,7 +176,7 @@ export function identifyOpenCycle(
 ): OpenCycle | null {
   const latestBill = newestBill(bills);
   if (latestBill !== null) {
-    if (latestBill.closingDate !== null && latestBill.closingDate >= today) {
+    if (billIsOpen(latestBill, today)) {
       return {
         openCycle: cycleOf(latestBill.dueDate),
         source: ClosingDateSource.openBill,
@@ -204,6 +204,13 @@ export function identifyOpenCycle(
   }
 
   return null;
+}
+
+function billIsOpen(bill: Bill, today: string): boolean {
+  if (bill.closingDate !== null) {
+    return bill.closingDate >= today;
+  }
+  return bill.dueDate > today;
 }
 
 /** Separates rows that affect the open cycle from rows assigned to later cycles. */

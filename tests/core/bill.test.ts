@@ -27,6 +27,11 @@ const CYCLE_CASES: readonly {
     expected: { openCycle: "2026-08", source: "open-bill" },
   },
   {
+    name: "a bill with no closing date and a future due date is still open",
+    fixture: billFixture({ bills: [bill({ closingDate: null, dueDate: "2026-08-15" })], today: "2026-07-27" }),
+    expected: { openCycle: "2026-08", source: "open-bill" },
+  },
+  {
     name: "otherwise the open cycle is the month after the newest closed bill",
     fixture: billFixture({ bills: [bill({ closingDate: "2026-07-08", dueDate: "2026-07-15" })], today: "2026-07-26" }),
     expected: { openCycle: "2026-08", source: "last-closed" },

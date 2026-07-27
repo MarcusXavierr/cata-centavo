@@ -286,12 +286,12 @@ const CARD_ACCOUNT: Account = { ...BANK_ACCOUNT, id: "acc-card", name: "Card", t
 function wireBill(overrides: Record<string, unknown>): WireBill {
   return BILL.parse({
     id: "bill-1",
-    accountId: CARD_ACCOUNT.id,
     billClosingDate: "2026-08-01T03:00:00.000Z",
     dueDate: "2026-08-15T03:00:00.000Z",
     totalAmount: 300,
     totalAmountCurrencyCode: "BRL",
     minimumPaymentAmount: 30,
+    allowsInstallments: null,
     financeCharges: [],
     payments: [],
     ...overrides,

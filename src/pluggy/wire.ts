@@ -128,13 +128,13 @@ const BILL_AMOUNT = z.object({
 /** The raw `GET /bills?accountId=` body for one credit-card statement. */
 export const BILL = z.object({
   id: z.string(),
-  accountId: z.string(),
+  accountId: z.string().optional(),
   billClosingDate: z.string().nullish(),
   dueDate: z.string(),
   totalAmount: z.number(),
   totalAmountCurrencyCode: z.string().nullish(),
   minimumPaymentAmount: z.number().nullish(),
-  allowsInstallments: z.boolean().optional(),
+  allowsInstallments: z.boolean().nullish(),
   financeCharges: z.array(BILL_AMOUNT),
   payments: z.array(BILL_AMOUNT),
 });
