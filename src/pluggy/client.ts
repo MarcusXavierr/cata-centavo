@@ -1,11 +1,12 @@
 import type { z } from "zod";
 
 import type { Account } from "../core/account.ts";
+import type { Bill } from "../core/bill.ts";
 import type { Bank, Connection, Consent } from "../core/contracts.ts";
 import { failureFor, parse, readJson, ResponseShapeError } from "./errors.ts";
-import { toAccount, toConnection, toConsent, toTransaction } from "./mapper.ts";
+import { toAccount, toBill, toConnection, toConsent, toTransaction } from "./mapper.ts";
 import { createTransport, type TransportOptions } from "./transport.ts";
-import { ACCOUNT, ACCOUNT_PAGE, CONSENT_PAGE, ITEM, TRANSACTION_PAGE } from "./wire.ts";
+import { ACCOUNT, ACCOUNT_PAGE, BILL_PAGE, CONSENT_PAGE, ITEM, TRANSACTION_PAGE } from "./wire.ts";
 
 export type PluggyClientOptions = TransportOptions;
 
@@ -43,6 +44,24 @@ function createTransactionWalker(get: Getter): (account: Account) => Promise<rea
 
     throw new ResponseShapeError(`Walking ${account.id} exceeded ${MAX_TRANSACTION_HOPS} pages without reaching the end`);
   };
+}
+
+
+function newestBillFirst(left: Bill, right: Bill): number {
+  if (left.closingDate === null) {
+    if (right.closingDate !== null) {
+      return 1;
+    }
+  } else if (right.closingDate === null) {
+    return -1;
+  } else {
+    const closingDateOrder = right.closingDate.localeCompare(left.closingDate);
+    if (closingDateOrder !== 0) {
+      return closingDateOrder;
+    }
+  }
+
+  return right.dueDate.localeCompare(left.dueDate);
 }
 
 /**
@@ -111,6 +130,38 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
 
     getTransactions: (account) => walkTransactions(account),
 
+    getBills: async (account: Account): Promise<readonly Bill[]> => {
+      const encodedAccountId = encodeURIComponent(account.id);
+      const firstPage = await get(
+        `/bills?accountId=${encodedAccountId}&pageSize=500&page=1`,
+        BILL_PAGE,
+        `bills ${account.id}`,
+      );
+      const pages = await Promise.all(
+        Array.from({ length: firstPage.totalPages - 1 }, (_, index) =>
+          get(
+            `/bills?accountId=${encodedAccountId}&pageSize=500&page=${index + 2}`,
+            BILL_PAGE,
+            `bills ${account.id}`,
+          ),
+        ),
+      );
+      const seenIds = new Set<string>();
+      const bills: Bill[] = [];
+
+      for (const page of [firstPage, ...pages]) {
+        for (const row of page.results) {
+          if (seenIds.has(row.id)) {
+            throw new ResponseShapeError(`Bill ${row.id} was already seen while walking ${account.id}`);
+          }
+          seenIds.add(row.id);
+          bills.push(toBill(row, account));
+        }
+      }
+
+      return bills.sort(newestBillFirst);
+    },
+
     getConsent: async (connectionId: string): Promise<Consent | null> => {
       const encodedConnectionId = encodeURIComponent(connectionId);
       const page = await get(
@@ -126,4 +177,3 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
     },
   };
 }
-

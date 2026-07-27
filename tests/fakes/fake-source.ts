@@ -12,7 +12,7 @@ import type { CategoryWriter } from "../../src/core/contracts.ts";
 
 export type FakeSourceOptions = Pick<
   FakeBankOptions,
-  "accounts" | "connections" | "unreachable" | "transactions" | "consents" | "unreachableConsent"
+  "accounts" | "connections" | "unreachable" | "transactions" | "bills" | "consents" | "unreachableConsent"
 >;
 
 export type FakeSource = Extract<Source, { readonly ok: true }> & {
@@ -42,6 +42,11 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     transactionFields = { ...transactionFields, transactions: options.transactions };
   }
 
+  let billFields: Pick<FakeBankOptions, "bills"> = {};
+  if (options.bills !== undefined) {
+    billFields = { ...billFields, bills: options.bills };
+  }
+
   let consentFields: Pick<FakeBankOptions, "consents"> = {};
   if (options.consents !== undefined) {
     consentFields = { ...consentFields, consents: options.consents };
@@ -57,6 +62,7 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     accounts,
     ...unreachableField,
     ...transactionFields,
+    ...billFields,
     ...consentFields,
     ...unreachableConsentFields,
   });
@@ -76,4 +82,3 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     writer: dummyWriter,
   };
 }
-

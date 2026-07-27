@@ -7,6 +7,7 @@
  */
 
 import type { Account } from "./account.ts";
+import type { Bill } from "./bill.ts";
 import type { CategoryId } from "./category.ts";
 import type { DerivedTransaction, Transaction } from "./transaction.ts";
 
@@ -110,6 +111,8 @@ export type Bank = {
   getAccount(accountId: string): Promise<Account>;
   /** Every transaction on one account, walked to the end of the cursor. */
   getTransactions(account: Account): Promise<readonly Transaction[]>;
+  /** Every published credit-card statement on one account, newest first. */
+  getBills(account: Account): Promise<readonly Bill[]>;
   /** `null` when the endpoint answered with no consent at all — distinct from revoked. */
   getConsent(connectionId: string): Promise<Consent | null>;
 };
@@ -158,5 +161,4 @@ export type CategoryWriter = {
   /** `affected` counts cached rows that now resolve through this document. */
   setCounterpartyCategory(document: string, category: CategoryId): { readonly affected: number };
 };
-
 

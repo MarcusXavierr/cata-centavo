@@ -55,6 +55,25 @@ function accountPage(page: number, totalPages: number, results: readonly unknown
   return { total: results.length * totalPages, totalPages, page, results };
 }
 
+function billBody(id: string, overrides: Record<string, unknown> = {}): unknown {
+  return {
+    id,
+    accountId: TRANSACTION_ACCOUNT.id,
+    billClosingDate: "2026-06-10T03:00:00.000Z",
+    dueDate: "2026-06-15T03:00:00.000Z",
+    totalAmount: 123.45,
+    totalAmountCurrencyCode: null,
+    minimumPaymentAmount: null,
+    financeCharges: [],
+    payments: [],
+    ...overrides,
+  };
+}
+
+function billPage(page: number, totalPages: number, results: readonly unknown[]): unknown {
+  return { total: results.length * totalPages, totalPages, page, results };
+}
+
 function consentBody(overrides: Record<string, unknown> = {}): unknown {
   return {
     id: "consent-1",
@@ -204,6 +223,81 @@ function harness(argument?: HarnessArgument): Harness {
 }
 
 describe("createPluggyClient", () => {
+  const BILLS_WALK_CASES: readonly {
+    readonly name: string;
+    readonly totalPages: number;
+    readonly perPage: number;
+    readonly expected: number;
+  }[] = [
+    { name: "walks every page to totalPages", totalPages: 3, perPage: 5, expected: 15 },
+    { name: "returns an empty list without error when the bank publishes none", totalPages: 1, perPage: 0, expected: 0 },
+  ];
+
+  for (const testCase of BILLS_WALK_CASES) {
+    it(`getBills ${testCase.name}`, async () => {
+      const { client, fetch } = harness((request) => {
+        if (isAuth(request)) {
+          return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+        }
+
+        const url = new URL(request.url);
+        assert.equal(url.pathname, "/bills");
+        assert.equal(url.searchParams.get("accountId"), TRANSACTION_ACCOUNT.id);
+        assert.equal(url.searchParams.get("pageSize"), "500");
+        const page = Number(url.searchParams.get("page"));
+        const results = Array.from({ length: testCase.perPage }, (_, index) => billBody(`bill-${page}-${index}`));
+        return json(billPage(page, testCase.totalPages, results));
+      });
+
+      const bills = await client.getBills(TRANSACTION_ACCOUNT);
+
+      assert.equal(bills.length, testCase.expected);
+      assert.ok(bills.every((bill) => bill.currency === TRANSACTION_ACCOUNT.currency));
+      const billRequests = fetch.requests.filter((request) => new URL(request.url).pathname === "/bills");
+      assert.deepEqual(
+        billRequests.map((request) => new URL(request.url).searchParams.get("page")),
+        Array.from({ length: testCase.totalPages }, (_, index) => String(index + 1)),
+      );
+    });
+  }
+
+  it("getBills rejects a repeated bill id when the connector ignores page", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+
+      const page = Number(new URL(request.url).searchParams.get("page"));
+      return json(billPage(page, 2, [billBody("bill-repeated")]));
+    });
+
+    await assert.rejects(() => client.getBills(TRANSACTION_ACCOUNT), /already seen/iu);
+  });
+
+  it("getBills orders newest closing dates first and null closing dates last", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+
+      return json(
+        billPage(1, 1, [
+          billBody("null-closing", { billClosingDate: null, dueDate: "2026-12-15T03:00:00.000Z" }),
+          billBody("older", { billClosingDate: "2026-04-10T03:00:00.000Z" }),
+          billBody("newer-earlier-due", { billClosingDate: "2026-06-10T03:00:00.000Z", dueDate: "2026-06-14T03:00:00.000Z" }),
+          billBody("newer-later-due", { billClosingDate: "2026-06-10T03:00:00.000Z", dueDate: "2026-06-15T03:00:00.000Z" }),
+        ]),
+      );
+    });
+
+    const bills = await client.getBills(TRANSACTION_ACCOUNT);
+
+    assert.deepEqual(
+      bills.map((bill) => bill.id),
+      ["newer-later-due", "newer-earlier-due", "older", "null-closing"],
+    );
+  });
+
   const WALK_CASES: readonly {
     readonly name: string;
     readonly pages: readonly TransactionPageCase[];

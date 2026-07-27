@@ -1,4 +1,5 @@
 import type { Account } from "../../src/core/account.ts";
+import type { Bill } from "../../src/core/bill.ts";
 import type { Bank, Connection, Consent } from "../../src/core/contracts.ts";
 import type { Transaction } from "../../src/core/transaction.ts";
 import { AuthError, NotFoundError } from "../../src/pluggy/errors.ts";
@@ -7,6 +8,7 @@ export type FakeBankOptions = {
   readonly connections?: readonly Connection[];
   readonly accounts?: Readonly<Record<string, readonly Account[]>>;
   readonly transactions?: Readonly<Record<string, readonly Transaction[]>>;
+  readonly bills?: Readonly<Record<string, readonly Bill[]>>;
   /** When set, `verifyCredentials` rejects with an `AuthError` carrying it. */
   readonly credentialsRejected?: string;
   /** Ids that fail with something other than "not found". */
@@ -35,6 +37,7 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
   const connections = options.connections ?? [];
   const accounts = options.accounts ?? {};
   const transactions = options.transactions ?? {};
+  const bills = options.bills ?? {};
   const unreachable = options.unreachable ?? {};
   const consents = options.consents ?? {};
   const unreachableConsent = options.unreachableConsent ?? {};
@@ -102,6 +105,12 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
       calls.push(`transactions:${account.id}`);
       throwIfUnreachable(account.connectionId);
       return transactions[account.id] ?? [];
+    },
+
+    getBills: async (account) => {
+      calls.push(`bills:${account.id}`);
+      throwIfUnreachable(account.connectionId);
+      return bills[account.id] ?? [];
     },
 
     getConsent: async (connectionId) => {
