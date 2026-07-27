@@ -5,7 +5,7 @@ import type { ToolDeps } from "./tools/result.ts";
 import type { Source } from "./source.ts";
 import { registerGetAccounts, registerGetBalanceByAccount } from "./tools/accounts.ts";
 import { registerGetBalance } from "./tools/balance.ts";
-import { registerGetBills } from "./tools/bills.ts";
+import { registerGetBills, registerGetBillSummary } from "./tools/bills.ts";
 import {
   registerDeleteClosingDay,
   registerListClosingDays,
@@ -46,6 +46,7 @@ const REGISTRARS: readonly ((server: McpServer, deps: ToolDeps) => void)[] = [
   registerSetClosingDay,
   registerDeleteClosingDay,
   registerGetBills,
+  registerGetBillSummary,
   registerListSources,
 ];
 
