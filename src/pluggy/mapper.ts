@@ -1,8 +1,9 @@
 import { ACCOUNT_TYPES, type Account, type CreditDetails } from "../core/account.ts";
+import type { Bill } from "../core/bill.ts";
 import type { Connection, Consent } from "../core/contracts.ts";
 import { ResponseShapeError } from "./errors.ts";
 import { toCents } from "./money.ts";
-import type { WireAccount, WireConsent, WireItem } from "./wire.ts";
+import type { WireAccount, WireBill, WireConsent, WireItem } from "./wire.ts";
 
 export { toCents } from "./money.ts";
 export { toTransaction } from "./transaction-mapper.ts";
@@ -71,6 +72,44 @@ export function toAccount(account: WireAccount, connection: Connection): Account
     lastUpdatedAt: connection.lastUpdatedAt,
     credit,
   };
+}
+
+/** Maps Pluggy's bill body onto our statement vocabulary. */
+export function toBill(bill: WireBill, account: Account): Bill {
+  return {
+    id: bill.id,
+    closingDate: utcDayOrNull(bill.billClosingDate),
+    dueDate: utcDayOf(bill.dueDate),
+    totalCents: toCents(bill.totalAmount),
+    currency: bill.totalAmountCurrencyCode ?? account.currency,
+    minimumPaymentCents: toNullableCents(bill.minimumPaymentAmount),
+    financeChargesCents: sumAmounts(bill.financeCharges),
+    paymentsCents: sumAmounts(bill.payments),
+    paymentCount: bill.payments.length,
+  };
+}
+
+function utcDayOrNull(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return utcDayOf(value);
+}
+
+function utcDayOf(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new ResponseShapeError(`Pluggy returned an invalid bill date: ${value}`);
+  }
+
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function sumAmounts(rows: readonly { readonly amount: number }[]): number {
+  return rows.reduce((sum, row) => sum + toCents(row.amount), 0);
 }
 
 function toAccountType(type: string): Account["type"] {

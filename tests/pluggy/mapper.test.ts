@@ -3,11 +3,20 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import type { Account } from "../../src/core/account.ts";
+import type { Bill } from "../../src/core/bill.ts";
 import type { Transaction } from "../../src/core/transaction.ts";
 import { connection } from "../fakes/fake-bank.ts";
 import { ResponseShapeError } from "../../src/pluggy/errors.ts";
-import { toAccount, toCents, toConnection, toTransaction } from "../../src/pluggy/mapper.ts";
-import { ACCOUNT_PAGE, ITEM, TRANSACTION_PAGE, type WireAccount, type WireTransaction } from "../../src/pluggy/wire.ts";
+import { toAccount, toBill, toCents, toConnection, toTransaction } from "../../src/pluggy/mapper.ts";
+import {
+  ACCOUNT_PAGE,
+  BILL,
+  ITEM,
+  TRANSACTION_PAGE,
+  type WireAccount,
+  type WireBill,
+  type WireTransaction,
+} from "../../src/pluggy/wire.ts";
 
 function accountFixture(name: string): WireAccount {
   const raw: unknown = JSON.parse(readFileSync(new URL(`../fixtures/${name}.json`, import.meta.url), "utf8"));
@@ -273,6 +282,50 @@ const BANK_ACCOUNT: Account = {
 };
 
 const CARD_ACCOUNT: Account = { ...BANK_ACCOUNT, id: "acc-card", name: "Card", type: "CREDIT", subtype: "CREDIT_CARD" };
+
+function wireBill(overrides: Record<string, unknown>): WireBill {
+  return BILL.parse({
+    id: "bill-1",
+    accountId: CARD_ACCOUNT.id,
+    billClosingDate: "2026-08-01T03:00:00.000Z",
+    dueDate: "2026-08-15T03:00:00.000Z",
+    totalAmount: 300,
+    totalAmountCurrencyCode: "BRL",
+    minimumPaymentAmount: 30,
+    financeCharges: [],
+    payments: [],
+    ...overrides,
+  });
+}
+
+describe("toBill", () => {
+  const BILL_CASES: readonly {
+    readonly name: string;
+    readonly wire: Record<string, unknown>;
+    readonly expected: Partial<Bill>;
+  }[] = [
+    {
+      name: "sums finance charges and payments rather than passing the arrays",
+      wire: { financeCharges: [{ amount: 1.5 }, { amount: 2.25 }], payments: [{ amount: 10 }, { amount: 5 }] },
+      expected: { financeChargesCents: 375, paymentsCents: 1_500, paymentCount: 2 },
+    },
+    { name: "rounds four decimals half away from zero", wire: { totalAmount: 307.8891 }, expected: { totalCents: 30_789 } },
+    { name: "keeps a null closing date rather than inventing one", wire: { billClosingDate: null }, expected: { closingDate: null } },
+    { name: "reduces a UTC midnight to its calendar day", wire: { dueDate: "2026-08-15T00:00:00.000Z" }, expected: { dueDate: "2026-08-15" } },
+    { name: "reduces the sandbox connector's 03:00Z to the same day", wire: { dueDate: "2026-08-15T03:00:00.000Z" }, expected: { dueDate: "2026-08-15" } },
+    { name: "falls back to the account currency when the bill omits one", wire: { totalAmountCurrencyCode: null }, expected: { currency: "BRL" } },
+  ];
+
+  for (const { name, wire, expected } of BILL_CASES) {
+    it(name, () => {
+      const bill = toBill(wireBill(wire), CARD_ACCOUNT);
+
+      for (const [key, value] of Object.entries(expected)) {
+        assert.deepEqual(bill[key as keyof Bill], value, key);
+      }
+    });
+  }
+});
 
 describe("toTransaction", () => {
   const SIGN_CASES: readonly { readonly name: string; readonly id: string; readonly account: Account; readonly cents: number }[] = [

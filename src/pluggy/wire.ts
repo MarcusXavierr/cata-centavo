@@ -121,6 +121,34 @@ export const ACCOUNT_PAGE = z.object({
 
 export type WireAccount = z.infer<typeof ACCOUNT>;
 
+const BILL_AMOUNT = z.object({
+  amount: z.number(),
+});
+
+/** The raw `GET /bills?accountId=` body for one credit-card statement. */
+export const BILL = z.object({
+  id: z.string(),
+  accountId: z.string(),
+  billClosingDate: z.string().nullish(),
+  dueDate: z.string(),
+  totalAmount: z.number(),
+  totalAmountCurrencyCode: z.string().nullish(),
+  minimumPaymentAmount: z.number().nullish(),
+  allowsInstallments: z.boolean().optional(),
+  financeCharges: z.array(BILL_AMOUNT),
+  payments: z.array(BILL_AMOUNT),
+});
+
+export type WireBill = z.infer<typeof BILL>;
+
+/** Pluggy's offset envelope for `/bills`. */
+export const BILL_PAGE = z.object({
+  total: z.number(),
+  totalPages: z.number(),
+  page: z.number(),
+  results: z.array(BILL),
+});
+
 /** Nested fields Pluggy omits entirely when a card row has no such detail. */
 export const CREDIT_CARD_METADATA = z.object({
   billId: z.string().optional(),
