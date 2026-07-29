@@ -155,6 +155,31 @@ function dayOf(date: string): number {
   return Number(date.slice(8, 10));
 }
 
+/**
+ * The month a cycle closes in, read back off its tag.
+ *
+ * The tag is a due month, so a card whose due day falls earlier in the month
+ * than its closing day closes in the month before the one it is tagged with.
+ * Callers that have to place the closing day on a calendar go through here
+ * rather than assuming the tag is the closing month.
+ */
+export function closingCycleOf(openCycle: string, closingDay: number, dueDay: number | null): string {
+  if (dueDay !== null && dueDay < closingDay) {
+    return precedingCycle(openCycle);
+  }
+  return openCycle;
+}
+
+function precedingCycle(cycle: string): string {
+  let year = Number(cycle.slice(0, 4));
+  let month = Number(cycle.slice(5, 7)) - 1;
+  if (month === 0) {
+    year -= 1;
+    month = 12;
+  }
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`;
+}
+
 function cycleOf(date: string): string {
   return date.slice(0, 7);
 }
