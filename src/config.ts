@@ -64,7 +64,11 @@ export function loadConfig(env: Env): ConfigResult {
 }
 
 function readRequired(env: Env, name: string, problems: string[]): string | undefined {
-  const value = env[name]?.trim();
+  let value = env[name]?.trim();
+
+  if (value !== undefined) {
+    value = cleanToken(value);
+  }
 
   if (value === undefined || value === "") {
     problems.push(`${name} is missing or empty. ${HOW_TO_SET}`);
@@ -86,8 +90,8 @@ function readItemIds(env: Env, problems: string[]): readonly string[] {
   }
 
   const ids = raw
-    .split(",")
-    .map((id) => id.trim())
+    .split(/[,;\n]+/)
+    .map((id) => cleanToken(id))
     .filter((id) => id !== "");
 
   if (ids.length === 0) {
@@ -98,6 +102,10 @@ function readItemIds(env: Env, problems: string[]): readonly string[] {
   problems.push(...idProblems(name, ids));
 
   return ids;
+}
+
+function cleanToken(value: string): string {
+  return value.replace(/^[\["'`\s]+|[\]"'`\s]+$/g, "");
 }
 
 /** Both problems are reported, because a list can be malformed *and* repeat itself. */
