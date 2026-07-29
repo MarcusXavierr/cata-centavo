@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -89,7 +89,7 @@ describe("readLocalState", () => {
   });
 
   it("reads the real cache.db and data.db paths off a file-backed connection", () => {
-    const dir = mkdtempSync(join(tmpdir(), "cata-centavo-diagnostics-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "cata-centavo-diagnostics-")));
     const cacheDb = join(dir, "cache.db");
     const dataDb = join(dir, "data.db");
     const databases = openDatabases({ cacheDb, dataDb, logFile: join(dir, "log") });
