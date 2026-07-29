@@ -1,6 +1,7 @@
 import type { Account } from "../../core/account.ts";
 import {
   ClosingDateSource,
+  closingCycleOf,
   newestBill,
   type Bill,
   type OpenCycle,
@@ -152,14 +153,22 @@ function datesAfterClosedBill(bill: Bill | null): CycleDates {
 }
 
 function datesFromLocalDay(cycle: string, storedDay: number | null, account: Account): CycleDates {
+  const balanceDueDate = creditDate(account, "balanceDueDate");
   let closingDate: string | null = null;
   if (storedDay !== null) {
-    closingDate = dateInCycle(cycle, storedDay);
+    closingDate = dateInCycle(closingCycleOf(cycle, storedDay, dueDayOf(balanceDueDate)), storedDay);
   }
   return {
     closingDate,
-    dueDate: dateInCycleFrom(creditDate(account, "balanceDueDate"), cycle),
+    dueDate: dateInCycleFrom(balanceDueDate, cycle),
   };
+}
+
+function dueDayOf(balanceDueDate: Date | null): number | null {
+  if (balanceDueDate === null) {
+    return null;
+  }
+  return balanceDueDate.getUTCDate();
 }
 
 function creditDate(

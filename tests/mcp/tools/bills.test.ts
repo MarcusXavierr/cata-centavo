@@ -369,6 +369,38 @@ describe("getBillSummary", () => {
     });
   });
 
+  it("reports the closing date in the month the cycle closes, not the month it falls due", async () => {
+    const card = summaryCard({
+      credit: {
+        limitCents: 100_000,
+        availableLimitCents: 75_000,
+        balanceCloseDate: null,
+        balanceDueDate: new Date("2026-07-05T03:00:00.000Z"),
+        brand: "Synthetic",
+      },
+    });
+    const rows = [cardRow({ id: "local-cycle", amountCents: -100, billId: null, billForecastDate: "2026-08" })];
+    const fixture = readerFixture({ accounts: [card], rows });
+
+    const result = await handleGetBillSummary(
+      depsWith(sourceForCard(card), {
+        reader: fixture.reader,
+        closingDays: closingDays([{ accountId: card.id, day: 25 }]),
+        clock: fixedClock(new Date("2026-07-10T12:00:00.000Z")),
+      }),
+      { accountId: card.id },
+    );
+    const actual = payload(result) as Record<string, unknown>;
+
+    assert.deepEqual(actual["cycle"], {
+      openCycle: "2026-08",
+      closingDate: "2026-07-25",
+      dueDate: "2026-08-05",
+      closingDateSource: "local",
+    });
+    assert.equal(actual["posted"], "1.00");
+  });
+
   it("reports negative and inverted estimates instead of correcting them", async () => {
     const card = summaryCard({ amountCents: 1_000 });
     const rows = [

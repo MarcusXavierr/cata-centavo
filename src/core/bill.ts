@@ -73,7 +73,7 @@ export function identifyOpenCycle(
 
   if (storedDay !== null) {
     return {
-      openCycle: cycleFromStoredDay(storedDay, today),
+      openCycle: cycleFromStoredDay(storedDay, balanceDueDate, today),
       source: ClosingDateSource.local,
     };
   }
@@ -113,7 +113,36 @@ function billDate(bill: Bill): string {
   return bill.dueDate;
 }
 
-function cycleFromStoredDay(storedDay: number, today: string): string {
+/**
+ * The open cycle from a locally stored closing day, tagged by the month it
+ * falls due.
+ *
+ * The tag exists to be compared against `billForecastDate`, which Pluggy writes
+ * against a `Bill`, and a `Bill` is identified by its `dueDate`. The other three
+ * sources read that month straight off a due date; this one holds a closing day
+ * and has to shift it. A card closing on the 25th and falling due on the 5th
+ * closes in one month and is due in the next, so its cycle carries the later
+ * tag (issue #13).
+ *
+ * A due day equal to the closing day shifts too. A bill cannot close and fall
+ * due on the same day, because that leaves no days to pay it, so the two
+ * matching means the due date is a month away rather than none.
+ *
+ * `balanceDueDate` supplies the due day. Without it there is no closing-to-due
+ * interval anywhere in the data, so the closing month stands as the best
+ * available guess rather than a refusal.
+ */
+function cycleFromStoredDay(storedDay: number, balanceDueDate: string | null, today: string): string {
+  const closingCycle = closingCycleFromStoredDay(storedDay, today);
+
+  if (balanceDueDate !== null && dayOf(balanceDueDate) <= storedDay) {
+    return followingCycle(closingCycle);
+  }
+  return closingCycle;
+}
+
+/** The month the open cycle closes in. A day landing on the closing day closes it. */
+function closingCycleFromStoredDay(storedDay: number, today: string): string {
   const currentCycle = cycleOf(today);
   const year = Number(currentCycle.slice(0, 4));
   const month = Number(currentCycle.slice(5, 7));
@@ -124,6 +153,35 @@ function cycleFromStoredDay(storedDay: number, today: string): string {
     return followingCycle(currentCycle);
   }
   return currentCycle;
+}
+
+function dayOf(date: string): number {
+  return Number(date.slice(8, 10));
+}
+
+/**
+ * The month a cycle closes in, read back off its tag.
+ *
+ * The tag is a due month, so a card whose due day falls on or before its
+ * closing day closes in the month before the one it is tagged with. Callers
+ * that have to place the closing day on a calendar go through here rather than
+ * assuming the tag is the closing month.
+ */
+export function closingCycleOf(openCycle: string, closingDay: number, dueDay: number | null): string {
+  if (dueDay !== null && dueDay <= closingDay) {
+    return precedingCycle(openCycle);
+  }
+  return openCycle;
+}
+
+function precedingCycle(cycle: string): string {
+  let year = Number(cycle.slice(0, 4));
+  let month = Number(cycle.slice(5, 7)) - 1;
+  if (month === 0) {
+    year -= 1;
+    month = 12;
+  }
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`;
 }
 
 function cycleOf(date: string): string {
