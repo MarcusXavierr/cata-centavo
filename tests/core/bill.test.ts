@@ -38,17 +38,47 @@ const CYCLE_CASES: readonly {
   {
     name: "with no bills the stored day wins over balanceDueDate",
     fixture: billFixture({ bills: [], storedDay: 20, balanceDueDate: "2026-07-15", today: "2026-07-26" }),
+    expected: { openCycle: "2026-09", source: "local" },
+  },
+  {
+    name: "a card closing on the 25th falls due the next month, and is tagged by that month",
+    fixture: billFixture({ bills: [], storedDay: 25, balanceDueDate: "2026-07-05", today: "2026-07-10" }),
     expected: { openCycle: "2026-08", source: "local" },
+  },
+  {
+    name: "the same card past its closing day moves both the cycle and the due month on",
+    fixture: billFixture({ bills: [], storedDay: 25, balanceDueDate: "2026-07-05", today: "2026-07-26" }),
+    expected: { openCycle: "2026-09", source: "local" },
+  },
+  {
+    name: "a card falling due after it closes stays in the closing month",
+    fixture: billFixture({ bills: [], storedDay: 20, balanceDueDate: "2026-07-25", today: "2026-07-10" }),
+    expected: { openCycle: "2026-07", source: "local" },
+  },
+  {
+    name: "a due day equal to the closing day is the same month, not the next",
+    fixture: billFixture({ bills: [], storedDay: 20, balanceDueDate: "2026-07-20", today: "2026-07-10" }),
+    expected: { openCycle: "2026-07", source: "local" },
+  },
+  {
+    name: "the due month shift rolls the year over too",
+    fixture: billFixture({ bills: [], storedDay: 25, balanceDueDate: "2026-12-05", today: "2026-12-26" }),
+    expected: { openCycle: "2027-02", source: "local" },
+  },
+  {
+    name: "without balanceDueDate there is no closing-to-due interval, so the closing month answers",
+    fixture: billFixture({ bills: [], storedDay: 25, balanceDueDate: null, today: "2026-07-10" }),
+    expected: { openCycle: "2026-07", source: "local" },
   },
   {
     name: "a stored day of 31 clamps to the last day of February, so the 28th still closes",
     fixture: billFixture({ bills: [], storedDay: 31, today: "2027-02-28" }),
-    expected: { openCycle: "2027-03", source: "local" },
+    expected: { openCycle: "2027-04", source: "local" },
   },
   {
     name: "and the 27th does not",
     fixture: billFixture({ bills: [], storedDay: 31, today: "2027-02-27" }),
-    expected: { openCycle: "2027-02", source: "local" },
+    expected: { openCycle: "2027-03", source: "local" },
   },
   {
     name: "with no bills and no stored day, balanceDueDate answers",
