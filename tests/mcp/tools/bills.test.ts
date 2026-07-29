@@ -390,14 +390,15 @@ describe("getBillSummary", () => {
       }),
       { accountId: card.id },
     );
-    const actual = payload(result) as { readonly cycle: unknown };
+    const actual = payload(result) as Record<string, unknown>;
 
-    assert.deepEqual(actual.cycle, {
+    assert.deepEqual(actual["cycle"], {
       openCycle: "2026-08",
       closingDate: "2026-07-25",
       dueDate: "2026-08-05",
       closingDateSource: "local",
     });
+    assert.equal(actual["posted"], "1.00");
   });
 
   it("reports negative and inverted estimates instead of correcting them", async () => {

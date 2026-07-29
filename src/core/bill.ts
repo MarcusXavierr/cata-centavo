@@ -124,6 +124,10 @@ function billDate(bill: Bill): string {
  * closes in one month and is due in the next, so its cycle carries the later
  * tag (issue #13).
  *
+ * A due day equal to the closing day shifts too. A bill cannot close and fall
+ * due on the same day, because that leaves no days to pay it, so the two
+ * matching means the due date is a month away rather than none.
+ *
  * `balanceDueDate` supplies the due day. Without it there is no closing-to-due
  * interval anywhere in the data, so the closing month stands as the best
  * available guess rather than a refusal.
@@ -131,7 +135,7 @@ function billDate(bill: Bill): string {
 function cycleFromStoredDay(storedDay: number, balanceDueDate: string | null, today: string): string {
   const closingCycle = closingCycleFromStoredDay(storedDay, today);
 
-  if (balanceDueDate !== null && dayOf(balanceDueDate) < storedDay) {
+  if (balanceDueDate !== null && dayOf(balanceDueDate) <= storedDay) {
     return followingCycle(closingCycle);
   }
   return closingCycle;
@@ -158,13 +162,13 @@ function dayOf(date: string): number {
 /**
  * The month a cycle closes in, read back off its tag.
  *
- * The tag is a due month, so a card whose due day falls earlier in the month
- * than its closing day closes in the month before the one it is tagged with.
- * Callers that have to place the closing day on a calendar go through here
- * rather than assuming the tag is the closing month.
+ * The tag is a due month, so a card whose due day falls on or before its
+ * closing day closes in the month before the one it is tagged with. Callers
+ * that have to place the closing day on a calendar go through here rather than
+ * assuming the tag is the closing month.
  */
 export function closingCycleOf(openCycle: string, closingDay: number, dueDay: number | null): string {
-  if (dueDay !== null && dueDay < closingDay) {
+  if (dueDay !== null && dueDay <= closingDay) {
     return precedingCycle(openCycle);
   }
   return openCycle;

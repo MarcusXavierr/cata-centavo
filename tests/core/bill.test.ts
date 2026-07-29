@@ -56,9 +56,9 @@ const CYCLE_CASES: readonly {
     expected: { openCycle: "2026-07", source: "local" },
   },
   {
-    name: "a due day equal to the closing day is the same month, not the next",
+    name: "a due day equal to the closing day falls due a month out, not the same day",
     fixture: billFixture({ bills: [], storedDay: 20, balanceDueDate: "2026-07-20", today: "2026-07-10" }),
-    expected: { openCycle: "2026-07", source: "local" },
+    expected: { openCycle: "2026-08", source: "local" },
   },
   {
     name: "the due month shift rolls the year over too",
@@ -72,13 +72,18 @@ const CYCLE_CASES: readonly {
   },
   {
     name: "a stored day of 31 clamps to the last day of February, so the 28th still closes",
-    fixture: billFixture({ bills: [], storedDay: 31, today: "2027-02-28" }),
-    expected: { openCycle: "2027-04", source: "local" },
+    fixture: billFixture({ bills: [], storedDay: 31, balanceDueDate: null, today: "2027-02-28" }),
+    expected: { openCycle: "2027-03", source: "local" },
   },
   {
     name: "and the 27th does not",
-    fixture: billFixture({ bills: [], storedDay: 31, today: "2027-02-27" }),
-    expected: { openCycle: "2027-03", source: "local" },
+    fixture: billFixture({ bills: [], storedDay: 31, balanceDueDate: null, today: "2027-02-27" }),
+    expected: { openCycle: "2027-02", source: "local" },
+  },
+  {
+    name: "the clamped February cycle still shifts to its due month",
+    fixture: billFixture({ bills: [], storedDay: 31, balanceDueDate: "2027-02-15", today: "2027-02-28" }),
+    expected: { openCycle: "2027-04", source: "local" },
   },
   {
     name: "with no bills and no stored day, balanceDueDate answers",
@@ -114,11 +119,11 @@ const CLOSING_CYCLE_CASES: readonly {
     expected: "2026-07",
   },
   {
-    name: "a due day equal to the closing day crosses no month",
+    name: "a due day equal to the closing day still closes the month before",
     openCycle: "2026-07",
     closingDay: 20,
     dueDay: 20,
-    expected: "2026-07",
+    expected: "2026-06",
   },
   {
     name: "without a due day the tag is taken as the closing month",

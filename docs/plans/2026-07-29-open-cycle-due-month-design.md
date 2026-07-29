@@ -22,7 +22,7 @@ A tag one month early sends open-cycle rows into `futureRows`: `posted` underrep
 
 `cycleFromStoredDay` now takes `balanceDueDate` and splits in two. `closingCycleFromStoredDay` keeps the existing behaviour unchanged, including the February clamp and the rule that a day landing on the closing day closes the cycle. `cycleFromStoredDay` then shifts that month forward when the due day precedes the closing day, because a card whose due day comes earlier in the month than its closing day falls due in the following month.
 
-A due day equal to the closing day is treated as the same month. There is no interval to cross.
+A due day equal to the closing day shifts as well. A bill cannot close and fall due on the same day, since that leaves no days to pay it, so two matching day numbers mean the due date is a month out rather than none.
 
 ## The reported closing date
 
@@ -44,6 +44,8 @@ That keeps the fix inside `core/bill.ts` with no API change and no data migratio
 
 Three existing expectations move, all from the same cause. The stored-day case at closing day 20 with a due date on the 15th becomes `2026-09`. The two February clamp cases inherit the fixture's default due day of the 15th against a stored day of 31, so they become `2027-04` and `2027-03`. What those two assert, that the 28th closes a clamped cycle and the 27th does not, is unchanged.
 
-`closingCycleOf` is covered directly in `tests/core/bill.test.ts` as its own table: due day before, after and equal to the closing day, no due day at all, and the January tag whose closing month is the December before it. `tests/mcp/tools/bills.test.ts` covers the formatter end to end on the card that closes on the 25th and falls due on the 5th, which is the case that fails if the tag and the reported closing date disagree.
+`closingCycleOf` is covered directly in `tests/core/bill.test.ts` as its own table: due day before, after and equal to the closing day, no due day at all, and the January tag whose closing month is the December before it. `tests/mcp/tools/bills.test.ts` covers the formatter end to end on the card that closes on the 25th and falls due on the 5th, which is the case that fails if the tag and the reported closing date disagree, and asserts `posted` alongside the dates. That figure is what ties the tag to `belongsToFutureCycle`: it reads `1.00` here and `0.00` against the tag this change replaces.
+
+The two February cases pass `balanceDueDate: null` so they assert the clamp and nothing else, and a third case pairs the clamp with a real due date to cover both together.
 
 Mutation testing over `src/core/bill.ts` leaves one survivor in the new code, the four-digit year pad in `precedingCycle`. It is the same mutant that already survives on the identical line of `followingCycle`, and killing it needs a year below 1000. The other survivors sit in `billIsOpen`, `newestBill`, the clamp and the leap-year helper, and all of them predate this change.
