@@ -28,8 +28,17 @@ describe("loadConfig", () => {
     });
   });
 
-  it("tolerates whitespace and empty entries in the id list", () => {
-    const cases = [` ${ID_A} , ${ID_B} `, `${ID_A},,${ID_B}`, `${ID_A},${ID_B},`];
+  it("tolerates whitespace, surrounding quotes, JSON brackets, and alternative separators in the id list", () => {
+    const cases = [
+      ` ${ID_A} , ${ID_B} `,
+      `${ID_A},,${ID_B}`,
+      `${ID_A},${ID_B},`,
+      `"${ID_A}", "${ID_B}"`,
+      `'${ID_A}', '${ID_B}'`,
+      `["${ID_A}", "${ID_B}"]`,
+      `${ID_A};${ID_B}`,
+      `${ID_A}\n${ID_B}`,
+    ];
 
     for (const PLUGGY_ITEM_IDS of cases) {
       const result = loadConfig({ ...VALID, PLUGGY_ITEM_IDS });
@@ -39,6 +48,20 @@ describe("loadConfig", () => {
         itemIds = result.config.itemIds;
       }
       assert.deepEqual(itemIds, [ID_A, ID_B], PLUGGY_ITEM_IDS);
+    }
+  });
+
+  it("strips surrounding quotes from required credentials", () => {
+    const result = loadConfig({
+      PLUGGY_CLIENT_ID: '"client-id"',
+      PLUGGY_CLIENT_SECRET: "'client-secret'",
+      PLUGGY_ITEM_IDS: ID_A,
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.config.credentials.clientId, "client-id");
+      assert.equal(result.config.credentials.clientSecret, "client-secret");
     }
   });
 
