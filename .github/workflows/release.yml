@@ -1,0 +1,100 @@
+name: Release
+
+# The tag is the trigger, never the merge. `ci.yml` guards every PR and every
+# push to main; this wakes up only when a version is deliberately cut. That
+# split is the point — most merges are not a release, and nothing here should
+# make them feel like one.
+#
+# npmjs.com stores the trusted publisher for this package by *filename*.
+# Renaming this file revokes its right to publish, and the failure only shows
+# up at the next tag.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  # `gh release create` writes to the repository.
+  contents: write
+  # Lets GitHub mint the short-lived OIDC token that npm exchanges for publish
+  # rights. Without it there is no credential at all: this workflow carries no
+  # secret, by design.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 24, not the 22.13 floor that `engines` promises. Trusted publishing
+      # needs npm >= 11.5.1, which means Node >= 22.14, and 24 ships 11.12+.
+      # Lowering this to match `engines` reads like a consistency fix and breaks
+      # the publish instead: the floor is what consumers run, not what publishes.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # A hand-typed tag can name a version the manifest never took. `npm
+      # version` keeps the two in step, but nothing enforces that afterwards.
+      # Fail before the expensive steps rather than publish one version's code
+      # under another version's number.
+      - name: Tag matches package.json
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p 'require("./package.json").version')"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json ${PKG}" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # The order CI uses and CLAUDE.md fixes. Redundant with `prepublishOnly`,
+      # which runs the same four inside `npm publish` — deliberately so. A type
+      # error surfaces here as a red `typecheck` step instead of buried in npm's
+      # output, at a point where the tag is already public.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run deps
+
+      # `pipefail` is explicit because the default shell is `bash -e`, where
+      # `tee` would otherwise swallow a failing suite's exit code.
+      - run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+
+      # Anchored for the reason ci.yml documents: a fixture carries the literal
+      # text "# tests 0", and an unanchored match would read it as a result.
+      - run: grep -qE "^(#|ℹ) tests [1-9]" test-output.txt
+
+      - run: npm run build
+
+      # Prefix comparison through index(), not a regex: the dots in a version
+      # are metacharacters, so "0.1.1" would also match a heading for "0x1y1".
+      #
+      # The emptiness check is the one that earns its keep. 0.1.2 shipped with
+      # no changelog entry at all; this turns that into a failed release instead
+      # of an empty one.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          awk -v h="## ${TAG}: " 'index($0, h) == 1 { f = 1; next } f && /^## / { exit } f' \
+            CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no section for ${TAG}" >&2
+            exit 1
+          fi
+
+      # No token and no `--provenance`. The OIDC exchange authenticates this,
+      # and provenance is attached automatically when a public package is
+      # published that way. A release that lands without the provenance badge
+      # means the publish authenticated by some other path than intended.
+      - run: npm publish
+
+      - name: GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
