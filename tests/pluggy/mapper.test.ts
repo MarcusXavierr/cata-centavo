@@ -7,7 +7,7 @@ import type { Bill } from "../../src/core/bill.ts";
 import type { Transaction } from "../../src/core/transaction.ts";
 import { connection } from "../fakes/fake-bank.ts";
 import { ResponseShapeError } from "../../src/pluggy/errors.ts";
-import { toAccount, toBill, toCents, toConnection, toTransaction } from "../../src/pluggy/mapper.ts";
+import { toAccount, toBill, toCents, toConnection, toInvestment, toTransaction } from "../../src/pluggy/mapper.ts";
 import {
   ACCOUNT_PAGE,
   BILL,
@@ -15,6 +15,7 @@ import {
   TRANSACTION_PAGE,
   type WireAccount,
   type WireBill,
+  type WireInvestment,
   type WireTransaction,
 } from "../../src/pluggy/wire.ts";
 
@@ -253,6 +254,81 @@ describe("toAccount", () => {
     );
 
     assert.deepEqual(connection.warnings, []);
+  });
+});
+
+describe("toInvestment", () => {
+  const conn = connection("conn-1");
+  const ordinary: WireInvestment = {
+    id: "investment-1",
+    name: "Certificate of Deposit",
+    balance: 1234.56,
+    currencyCode: "BRL",
+    type: "CDB",
+  };
+
+  const liquidationCases: readonly {
+    readonly name: string;
+    readonly investment: WireInvestment;
+    readonly discarded: boolean;
+  }[] = [
+    {
+      name: "discards a fully liquidated position",
+      investment: { ...ordinary, status: "TOTAL_WITHDRAWAL", balance: 0, amount: 0 },
+      discarded: true,
+    },
+    {
+      name: "keeps a total withdrawal with a nonzero amount",
+      investment: { ...ordinary, status: "TOTAL_WITHDRAWAL", balance: 0, amount: 1 },
+      discarded: false,
+    },
+    {
+      name: "keeps a total withdrawal with a null amount",
+      investment: { ...ordinary, status: "TOTAL_WITHDRAWAL", balance: 0, amount: null },
+      discarded: false,
+    },
+    {
+      name: "keeps a total withdrawal with an omitted amount",
+      investment: { ...ordinary, status: "TOTAL_WITHDRAWAL", balance: 0 },
+      discarded: false,
+    },
+    {
+      name: "keeps an active zero-balance position",
+      investment: { ...ordinary, status: "ACTIVE", balance: 0, amount: 0 },
+      discarded: false,
+    },
+  ];
+
+  for (const { name, investment, discarded } of liquidationCases) {
+    it(name, () => {
+      assert.equal(toInvestment(investment, conn) === null, discarded);
+    });
+  }
+
+  it("maps an ordinary position onto our shape", () => {
+    assert.deepEqual(toInvestment({ ...ordinary, quantity: 12.5 }, conn), {
+      id: "investment-1",
+      connectionId: "conn-1",
+      institution: "Nubank",
+      name: "Certificate of Deposit",
+      type: "CDB",
+      subtype: null,
+      balanceCents: 123456,
+      currency: "BRL",
+      quantity: "12.5",
+    });
+  });
+
+  it("maps absent quantities to null rather than a textual placeholder", () => {
+    for (const quantity of [null, undefined]) {
+      const mapped = toInvestment({ ...ordinary, quantity }, conn);
+      assert.ok(mapped);
+      assert.equal(mapped.quantity, null);
+    }
+  });
+
+  it("rejects a non-finite balance", () => {
+    assert.throws(() => toInvestment({ ...ordinary, balance: Number.NaN }, conn));
   });
 });
 

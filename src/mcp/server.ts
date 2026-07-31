@@ -14,6 +14,7 @@ import {
 import { registerListSources } from "./tools/sources.ts";
 import { registerGetTransactionDetails } from "./tools/transaction-details.ts";
 import { registerGetTransactions, registerListTransactions } from "./tools/transactions.ts";
+import { registerGetInvestments } from "./tools/investments.ts";
 import { registerSetCategory, registerSetCounterpartyCategory } from "./tools/set-category.ts";
 
 /** Creates the MCP server and registers its financial tools. */
@@ -40,6 +41,7 @@ const REGISTRARS: readonly ((server: McpServer, deps: ToolDeps) => void)[] = [
   registerGetTransactions,
   registerListTransactions,
   registerGetTransactionDetails,
+  registerGetInvestments,
   registerSetCategory,
   registerSetCounterpartyCategory,
   registerListClosingDays,

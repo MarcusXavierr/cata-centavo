@@ -1,5 +1,6 @@
 import type { Account } from "../../src/core/account.ts";
 import type { Bill } from "../../src/core/bill.ts";
+import type { InvestmentPosition } from "../../src/core/investment.ts";
 import type { Bank, Connection, Consent } from "../../src/core/contracts.ts";
 import type { Transaction } from "../../src/core/transaction.ts";
 import { AuthError, NotFoundError } from "../../src/pluggy/errors.ts";
@@ -9,6 +10,7 @@ export type FakeBankOptions = {
   readonly accounts?: Readonly<Record<string, readonly Account[]>>;
   readonly transactions?: Readonly<Record<string, readonly Transaction[]>>;
   readonly bills?: Readonly<Record<string, readonly Bill[]>>;
+  readonly investments?: Readonly<Record<string, readonly InvestmentPosition[]>>;
   /** When set, `verifyCredentials` rejects with an `AuthError` carrying it. */
   readonly credentialsRejected?: string;
   /** Ids that fail with something other than "not found". */
@@ -41,6 +43,7 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
   const unreachable = options.unreachable ?? {};
   const consents = options.consents ?? {};
   const unreachableConsent = options.unreachableConsent ?? {};
+  const investments = options.investments ?? {};
 
   const calls: string[] = [];
 
@@ -112,6 +115,12 @@ export function fakeBank(options: FakeBankOptions = {}): FakeBank {
       throwIfUnreachable(account.connectionId);
       return bills[account.id] ?? [];
     },
+    getInvestments: async (connectionId) => {
+      calls.push(`investments:${connectionId}`);
+      throwIfUnreachable(connectionId);
+      answer(connectionId);
+      return investments[connectionId] ?? [];
+    },
 
     getConsent: async (connectionId) => {
       calls.push(`getConsent:${connectionId}`);
@@ -150,6 +159,22 @@ export function account(id: string, overrides: Partial<Account> = {}): Account {
     currency: "BRL",
     lastUpdatedAt: new Date("2026-07-25T09:00:00.000Z"),
     credit: null,
+    ...overrides,
+  };
+}
+
+/** An active investment position with a healthy BRL default. */
+export function investmentPosition(id: string, overrides: Partial<InvestmentPosition> = {}): InvestmentPosition {
+  return {
+    id,
+    connectionId: "conn-1",
+    institution: "Nubank",
+    name: `Investment ${id}`,
+    type: "FIXED_INCOME",
+    subtype: null,
+    balanceCents: 12_345,
+    currency: "BRL",
+    quantity: null,
     ...overrides,
   };
 }

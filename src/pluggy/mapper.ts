@@ -1,9 +1,10 @@
 import { ACCOUNT_TYPES, type Account, type CreditDetails } from "../core/account.ts";
 import type { Bill } from "../core/bill.ts";
 import type { Connection, Consent } from "../core/contracts.ts";
+import type { InvestmentPosition } from "../core/investment.ts";
 import { ResponseShapeError } from "./errors.ts";
 import { toCents } from "./money.ts";
-import type { WireAccount, WireBill, WireConsent, WireItem } from "./wire.ts";
+import type { WireAccount, WireBill, WireConsent, WireInvestment, WireItem } from "./wire.ts";
 
 export { toCents } from "./money.ts";
 export { toTransaction } from "./transaction-mapper.ts";
@@ -72,6 +73,35 @@ export function toAccount(account: WireAccount, connection: Connection): Account
     lastUpdatedAt: connection.lastUpdatedAt,
     credit,
   };
+}
+
+export function toInvestment(investment: WireInvestment, connection: Connection): InvestmentPosition | null {
+  if (isFullyWithdrawn(investment)) {
+    return null;
+  }
+
+  return {
+    id: investment.id,
+    connectionId: connection.id,
+    institution: connection.institution,
+    name: investment.name,
+    type: investment.type,
+    subtype: investment.subtype ?? null,
+    balanceCents: toCents(investment.balance),
+    currency: investment.currencyCode,
+    quantity: toInvestmentQuantity(investment.quantity),
+  };
+}
+
+function isFullyWithdrawn(investment: WireInvestment): boolean {
+  return investment.status === "TOTAL_WITHDRAWAL" && investment.balance === 0 && investment.amount === 0;
+}
+
+function toInvestmentQuantity(quantity: WireInvestment["quantity"]): string | null {
+  if (quantity === null || quantity === undefined) {
+    return null;
+  }
+  return String(quantity);
 }
 
 /** Maps Pluggy's bill body onto our statement vocabulary. */

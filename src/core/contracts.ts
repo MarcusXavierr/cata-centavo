@@ -10,6 +10,7 @@ import type { Account } from "./account.ts";
 import type { Bill } from "./bill.ts";
 import type { CategoryId } from "./category.ts";
 import type { DerivedTransaction, Transaction } from "./transaction.ts";
+import type { InvestmentPosition } from "./investment.ts";
 
 
 
@@ -115,6 +116,8 @@ export type Bank = {
   getBills(account: Account): Promise<readonly Bill[]>;
   /** `null` when the endpoint answered with no consent at all — distinct from revoked. */
   getConsent(connectionId: string): Promise<Consent | null>;
+  /** Every active investment position on one connection. */
+  getInvestments(connectionId: string): Promise<readonly InvestmentPosition[]>;
 };
 
 

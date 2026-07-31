@@ -55,6 +55,25 @@ function accountPage(page: number, totalPages: number, results: readonly unknown
   return { total: results.length * totalPages, totalPages, page, results };
 }
 
+function investmentBody(id: string, overrides: Record<string, unknown> = {}): unknown {
+  return {
+    id,
+    name: `Investment ${id}`,
+    balance: 123.45,
+    currencyCode: "BRL",
+    type: "FIXED_INCOME",
+    subtype: null,
+    quantity: null,
+    amount: 123.45,
+    status: "ACTIVE",
+    ...overrides,
+  };
+}
+
+function billPage(page: number, totalPages: number, results: readonly unknown[]): unknown {
+  return { total: results.length * totalPages, totalPages, page, results };
+}
+
 function billBody(id: string, overrides: Record<string, unknown> = {}): unknown {
   return {
     id,
@@ -70,8 +89,29 @@ function billBody(id: string, overrides: Record<string, unknown> = {}): unknown 
   };
 }
 
-function billPage(page: number, totalPages: number, results: readonly unknown[]): unknown {
+function investmentPage(page: number, totalPages: number, results: readonly unknown[]): Record<string, unknown> {
   return { total: results.length * totalPages, totalPages, page, results };
+}
+
+function investmentResultsForPage(page: number): readonly unknown[] {
+  if (page === 2) {
+    return [investmentBody("withdrawn", { status: "TOTAL_WITHDRAWAL", balance: 0, amount: 0 })];
+  }
+  return [investmentBody(`investment-${page}`)];
+}
+
+function changedInvestmentTotal(requestedPage: number): unknown {
+  if (requestedPage === 1) {
+    return investmentPage(1, 2, [investmentBody("first")]);
+  }
+  return { ...investmentPage(2, 2, [investmentBody("second")]), total: 3 };
+}
+
+function changedInvestmentTotalPages(requestedPage: number): unknown {
+  if (requestedPage === 1) {
+    return investmentPage(1, 2, [investmentBody("first")]);
+  }
+  return { ...investmentPage(2, 3, [investmentBody("second")]), total: 2 };
 }
 
 function consentBody(overrides: Record<string, unknown> = {}): unknown {
@@ -326,6 +366,10 @@ describe("createPluggyClient", () => {
     const { client } = harness({ responder, limiter: { acquire: async () => {} } });
 
     await client.getTransactions(TRANSACTION_ACCOUNT);
+    assert.equal(
+      responder.urls[0],
+      `${BASE_URL}/v2/transactions?accountId=${encodeURIComponent(TRANSACTION_ACCOUNT.id)}`,
+    );
 
     assert.equal(responder.urls[1], `${BASE_URL}/v2/transactions?after=abc`);
   });
@@ -349,9 +393,27 @@ describe("createPluggyClient", () => {
   });
 
   it("the walk fails loudly on the hop cap instead of looping forever", async () => {
-    const { client } = harness({ responder: endlessPageResponder(), limiter: { acquire: async () => {} } });
+    const { client, fetch } = harness({ responder: endlessPageResponder(), limiter: { acquire: async () => {} } });
 
     await assert.rejects(() => client.getTransactions(TRANSACTION_ACCOUNT), /500/u);
+    assert.equal(
+      fetch.requests.filter((request) => new URL(request.url).pathname === "/v2/transactions").length,
+      500,
+    );
+  });
+
+  it("identifies the account when a transaction request fails", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      return json({ message: "temporarily unavailable" }, 500);
+    });
+
+    await assert.rejects(
+      () => client.getTransactions(TRANSACTION_ACCOUNT),
+      new RegExp(`transactions ${TRANSACTION_ACCOUNT.id}`),
+    );
   });
 
 
@@ -448,6 +510,244 @@ describe("createPluggyClient", () => {
     assert.ok(item);
     assert.equal(new URL(accounts?.url ?? "").searchParams.get("itemId"), ID);
   });
+
+  it("gets every investment page concurrently with its item and returns active positions", async () => {
+    const itemResponse = Promise.withResolvers<Response>();
+    let itemRequestStarted = false;
+    const { client, fetch } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+
+      const url = new URL(request.url);
+      if (url.pathname === `/items/${ID}`) {
+        itemRequestStarted = true;
+        return itemResponse.promise;
+      }
+
+      assert.equal(url.pathname, "/investments");
+      if (!itemRequestStarted) {
+        throw new Error("the initial investment page was requested before the item");
+      }
+      itemResponse.resolve(json(itemBody(ID)));
+
+      const page = Number(url.searchParams.get("page"));
+      return json(investmentPage(page, 3, investmentResultsForPage(page)));
+    });
+
+    const investments = await client.getInvestments(ID);
+
+    assert.deepEqual(investments, [
+      {
+        id: "investment-1",
+        connectionId: ID,
+        institution: "Nubank",
+        name: "Investment investment-1",
+        type: "FIXED_INCOME",
+        subtype: null,
+        balanceCents: 12_345,
+        currency: "BRL",
+        quantity: null,
+      },
+      {
+        id: "investment-3",
+        connectionId: ID,
+        institution: "Nubank",
+        name: "Investment investment-3",
+        type: "FIXED_INCOME",
+        subtype: null,
+        balanceCents: 12_345,
+        currency: "BRL",
+        quantity: null,
+      },
+    ]);
+    const investmentRequests = fetch.requests.filter((request) => new URL(request.url).pathname === "/investments");
+    assert.deepEqual(
+      investmentRequests.map((request) => {
+        const url = new URL(request.url);
+        return {
+          itemId: url.searchParams.get("itemId"),
+          pageSize: url.searchParams.get("pageSize"),
+          page: url.searchParams.get("page"),
+        };
+      }),
+      [
+        { itemId: ID, pageSize: "500", page: "1" },
+        { itemId: ID, pageSize: "500", page: "2" },
+        { itemId: ID, pageSize: "500", page: "3" },
+      ],
+    );
+    assert.equal(fetch.requests.filter((request) => new URL(request.url).pathname === `/items/${ID}`).length, 1);
+  });
+
+  it("rejects duplicate investment ids across pages", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      if (new URL(request.url).pathname === `/items/${ID}`) {
+        return json(itemBody(ID));
+      }
+
+      const page = Number(new URL(request.url).searchParams.get("page"));
+      return json(investmentPage(page, 2, [investmentBody("duplicated")]));
+    });
+
+    await assert.rejects(client.getInvestments(ID), (error: unknown) => {
+      assert.ok(error instanceof ResponseShapeError);
+      assert.match(error.message, /Investment duplicated/u);
+      assert.match(error.message, new RegExp(`connection ${ID}`));
+      return true;
+    });
+  });
+
+  const INVESTMENT_METADATA_CASES: readonly {
+    readonly name: string;
+    readonly expectedPage: number;
+    readonly response: (requestedPage: number) => unknown;
+  }[] = [
+    {
+      name: "first page reports a different page",
+      expectedPage: 1,
+      response: () => investmentPage(2, 1, []),
+    },
+    {
+      name: "total is fractional",
+      expectedPage: 1,
+      response: () => ({ ...investmentPage(1, 1, []), total: 0.5 }),
+    },
+    {
+      name: "totalPages is fractional",
+      expectedPage: 1,
+      response: () => investmentPage(1, 1.5, []),
+    },
+    {
+      name: "total is negative",
+      expectedPage: 1,
+      response: () => ({ ...investmentPage(1, 1, []), total: -1 }),
+    },
+    {
+      name: "totalPages is less than one",
+      expectedPage: 1,
+      response: () => investmentPage(1, 0, []),
+    },
+    {
+      name: "a later page changes total",
+      expectedPage: 2,
+      response: changedInvestmentTotal,
+    },
+    {
+      name: "a later page changes totalPages",
+      expectedPage: 2,
+      response: changedInvestmentTotalPages,
+    },
+    {
+      name: "a later page reports a different page",
+      expectedPage: 2,
+      response: (requestedPage) => {
+        if (requestedPage === 1) {
+          return investmentPage(1, 2, [investmentBody("first")]);
+        }
+        return investmentPage(3, 2, [investmentBody("second")]);
+      },
+    },
+  ];
+
+  for (const metadataCase of INVESTMENT_METADATA_CASES) {
+    it(`rejects investment metadata when ${metadataCase.name}`, async () => {
+      const { client, fetch } = harness((request) => {
+        if (isAuth(request)) {
+          return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+        }
+        if (new URL(request.url).pathname === `/items/${ID}`) {
+          return json(itemBody(ID));
+        }
+
+        const requestedPage = Number(new URL(request.url).searchParams.get("page"));
+        return json(metadataCase.response(requestedPage));
+      });
+
+      await assert.rejects(client.getInvestments(ID), (error: unknown) => {
+        assert.ok(error instanceof ResponseShapeError);
+        assert.match(error.message, new RegExp(`page ${metadataCase.expectedPage}`));
+        assert.match(error.message, new RegExp(`connection ${ID}`));
+        return true;
+      });
+      const investmentRequests = fetch.requests.filter((request) => new URL(request.url).pathname === "/investments");
+      assert.equal(investmentRequests[metadataCase.expectedPage - 1]?.url.includes(`page=${metadataCase.expectedPage}`), true);
+    });
+  }
+
+  it("accepts an empty single-page investment response", async () => {
+    const { client } = harness((request) => {
+      if (isAuth(request)) {
+        return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+      }
+      if (new URL(request.url).pathname === `/items/${ID}`) {
+        return json(itemBody(ID));
+      }
+      return json(investmentPage(1, 1, []));
+    });
+
+    assert.deepEqual(await client.getInvestments(ID), []);
+  });
+
+  const INVESTMENT_FAILURE_CASES: readonly {
+    readonly name: string;
+    readonly response: Handler;
+    readonly message: RegExp;
+  }[] = [
+    {
+      name: "the connection read",
+      response: (request) => {
+        if (new URL(request.url).pathname === `/items/${ID}`) {
+          return json({ message: "unavailable" }, 500);
+        }
+        return json(investmentPage(1, 1, []));
+      },
+      message: new RegExp(`connection ${ID}`),
+    },
+    {
+      name: "the first investment page",
+      response: (request) => {
+        if (new URL(request.url).pathname === `/items/${ID}`) {
+          return json(itemBody(ID));
+        }
+        return json({ message: "unavailable" }, 500);
+      },
+      message: new RegExp(`investments ${ID}`),
+    },
+    {
+      name: "a later investment page",
+      response: (request) => {
+        const url = new URL(request.url);
+        if (url.pathname === `/items/${ID}`) {
+          return json(itemBody(ID));
+        }
+        if (url.searchParams.get("page") === "1") {
+          return json(investmentPage(1, 2, [investmentBody("first")]));
+        }
+        return json({ message: "unavailable" }, 500);
+      },
+      message: new RegExp(`investments ${ID}`),
+    },
+  ];
+
+  for (const failureCase of INVESTMENT_FAILURE_CASES) {
+    it(`identifies ${failureCase.name} when an investment request fails`, async () => {
+      const { client } = harness((request, index) => {
+        if (isAuth(request)) {
+          return json({ apiKey: fakeJwt(new Date(NOW.getTime() + KEY_LIFETIME_MS)) });
+        }
+        return failureCase.response(request, index);
+      });
+
+      await assert.rejects(client.getInvestments(ID), (error: Error) => {
+        assert.match(error.message, failureCase.message);
+        return true;
+      });
+    });
+  }
 
   it("puts the requested account id in the path", async () => {
     const { client, fetch } = harness((request) => {
