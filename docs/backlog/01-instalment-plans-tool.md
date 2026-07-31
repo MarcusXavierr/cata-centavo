@@ -5,6 +5,8 @@
 **Tracker:** none (local markdown)
 **Size:** 2–3 days
 
+**Superseded in part by** `docs/plans/2026-07-30-instalment-plans-design.md`. That design was written against a second read of the cache and it overrides the Design section below wherever the two disagree, in particular the plan identity key and the reversal rule. The appendix here is still the field evidence both documents rest on.
+
 ## Goal
 
 Let an agent answer "what am I still paying off, and when does it end" in one tool call, without touching the database.
@@ -130,7 +132,7 @@ Sort by `finalCycle` ascending, then by `remainingTotal` descending. Carry `data
 ## Files to touch
 
 - `src/core/instalment-plans.ts` (new) — derivation
-- `src/core/bill-rows.ts` — extract the shared grouping so both callers use one implementation; do not fork it
+- `src/core/bill-rows.ts`: not touched. This ticket neither forks nor consumes `deriveImpliedCents`; ticket 03 unifies them.
 - `src/mcp/tools/instalment-plans.ts` (new) — tool, following the structure of `src/mcp/tools/bill-summary.ts`
 - `src/mcp/server.ts` — add to `REGISTRARS`
 - `tests/core/instalment-plans.test.ts`, `tests/mcp/` (new)
@@ -157,12 +159,13 @@ Every tool parameter needs a test proving it reaches the request: `accountId` an
 
 ## Acceptance Criteria
 
-* `listInstalmentPlans` returns every credit-card plan whose instalments paid is below its total, across all cards and all cached history, in a single call with no date range.
+* `listInstalmentPlans` returns every credit-card plan whose instalments paid is below its total, across all cards and all cached history, in a single call with no date range. Settled and reversed plans appear only under `includeSettled`.
 * An instalment sitting in the open cycle is reported as remaining, not paid, and the money still owed is returned as a decimal string.
-* One plan survives centavo drift and a counter embedded in the description; a counter that restarts under a reused description produces two plans.
-* `finalCycleSource` is `reported` only when the bank published the remaining rows, and `derived` otherwise.
-* A fully refunded plan is flagged `reversed` and left out of `totals`.
-* The grouping lives in one place, used by both this tool and `getBillSummary`.
+* One plan survives centavo drift and a rename mid-plan; two merchants sharing a card, a day and an instalment count stay two plans; a counter that restarts under a reused description produces two plans, the second flagged `renewal`.
+* `finalCycleSource` is `reported` only when the bank published the remaining rows, `derived` when projected from cadence, and `unknown` on a card whose open cycle cannot be identified, where `finalCycle` is null and the notice names `setClosingDay`.
+* A plan whose every materialized position is offset by a credit is flagged `reversed` and left out of `totals`; a plan with only some positions offset keeps its identity and its status, drops those positions from paid, remaining and both totals, and produces an adjustment note. A refund carrying no instalment metadata leaves a same-merchant plan untouched.
+* `purchaseTotal` is summed from the observed rows plus the unposted tail, so it survives a final instalment that drifts by a centavo.
+* The new derivation does not fork `deriveImpliedCents`. It leaves that function untouched and does not consume it. Unifying the two is ticket 03, deliberately kept out of this change because it moves a money figure `getBillSummary` already reports.
 
 ---
 
@@ -292,6 +295,8 @@ Any assumption that one bank's shape generalizes will produce wrong end dates fo
 
 ## Open questions
 
-- **Annual fee**: include, exclude, or return with a flag? It is structurally an instalment plan and the derivation produces it for free, but it is not a purchase and it renews forever. A flag seems right; the decision is the reviewer's.
-- **Plans on a card with no closing day configured**: `identifyOpenCycle` needs one. Decide whether to fall back, or return the plan with a null `finalCycle` and a notice, rather than omitting it.
-- **Centavo rounding in `remainingTotal`**: computed as per-instalment × remaining, so it can be a centavo off when the final instalment drifts. Acceptable, but should be stated in the tool description rather than discovered.
+All three are resolved in `docs/plans/2026-07-30-instalment-plans-design.md`, kept here for the reasoning that led to them.
+
+- **Annual fee**: flagged, not filtered. It falls out of the second identity pass for free and carries `renewal: true`.
+- **Plans on a card with no closing day configured**: returned, counted conservatively, with a null `finalCycle` and a notice naming `setClosingDay`.
+- **Centavo rounding in `remainingTotal`**: accepted and stated in the tool description.
