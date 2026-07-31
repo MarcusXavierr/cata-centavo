@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2: 2026-07-29
+
+### Bug Fixes
+
+- **Configuration**: quotes, backticks and square brackets wrapped around a Pluggy environment variable are now trimmed off before the value is used. Pasting a credential with its surrounding punctuation still attached no longer fails validation.
+- **`PLUGGY_ITEM_IDS`**: accepts semicolons and newlines as separators, in addition to commas.
+
 ## 0.1.1: 2026-07-29
 
 ### Bug Fixes
