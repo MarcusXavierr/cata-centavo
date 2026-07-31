@@ -36,6 +36,7 @@ describe("MCP server", () => {
       "deleteClosingDay",
       "getBills",
       "getBillSummary",
+      "listInstalmentPlans",
       "listSources",
     ]);
 

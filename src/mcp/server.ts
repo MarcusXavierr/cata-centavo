@@ -11,6 +11,7 @@ import {
   registerListClosingDays,
   registerSetClosingDay,
 } from "./tools/closing-days.ts";
+import { registerListInstalmentPlans } from "./tools/instalment-plans.ts";
 import { registerListSources } from "./tools/sources.ts";
 import { registerGetTransactionDetails } from "./tools/transaction-details.ts";
 import { registerGetTransactions, registerListTransactions } from "./tools/transactions.ts";
@@ -47,6 +48,7 @@ const REGISTRARS: readonly ((server: McpServer, deps: ToolDeps) => void)[] = [
   registerDeleteClosingDay,
   registerGetBills,
   registerGetBillSummary,
+  registerListInstalmentPlans,
   registerListSources,
 ];
 
