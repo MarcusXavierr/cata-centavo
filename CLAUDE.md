@@ -167,6 +167,19 @@ git push --follow-tags        # this is what releases
 - The release job runs on Node 24 rather than the 22.13 floor in `engines`, because trusted publishing needs npm ≥ 11.5.1. Do not "fix" that gap downwards.
 - `main` has no branch protection today. If it gets some, `npm version` will have to go through a PR.
 
+### Changelog entries
+
+One bullet per feature or fix. Name the thing **once**, as the head of that bullet, and hang its details off it as sub-bullets:
+
+- **`getInvestments`** — active investment positions, per connection.
+  - Balances and totals grouped by currency
+  - `connectionId` filter, cursor pagination up to 100 per call
+  - An unavailable connection is reported, never counted as zero
+
+Sub-bullets are fragments, not sentences: no trailing period, no second clause. The head bullet says what the thing is, the sub-bullets say what it does.
+
+**Never repeat a lead-in across sibling bullets.** The 0.2.0 entry shipped as three bullets that each opened with the same bolded tool name and a colon, each two or three sentences long. It reads as generated, and it puts README-depth prose into a file people scan to see what changed.
+
 ## Working agreement
 
 **Start every feature with:** "Let me research the codebase and create a plan before implementing."
