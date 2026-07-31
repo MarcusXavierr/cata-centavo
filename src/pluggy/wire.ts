@@ -121,6 +121,27 @@ export const ACCOUNT_PAGE = z.object({
 
 export type WireAccount = z.infer<typeof ACCOUNT>;
 
+export const INVESTMENT = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  balance: z.number(),
+  currencyCode: z.string(),
+  type: z.string(),
+  subtype: z.string().nullish(),
+  quantity: z.number().nullish(),
+  amount: z.number().nullish(),
+  status: z.string().nullish(),
+});
+
+export const INVESTMENT_PAGE = z.object({
+  total: z.number(),
+  totalPages: z.number(),
+  page: z.number(),
+  results: z.array(INVESTMENT),
+});
+
+export type WireInvestment = z.infer<typeof INVESTMENT>;
+
 const BILL_AMOUNT = z.object({
   amount: z.number(),
 });

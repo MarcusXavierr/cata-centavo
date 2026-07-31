@@ -6,7 +6,7 @@
     "testFiles": ["tests/**/*.test.ts"]
   },
   "mutate": ["src/core/**/*.ts", "src/pluggy/**/*.ts", "src/storage/**/*.ts", "src/mcp/format.ts"],
-  "ignorePatterns": ["dist", "docs", "reports", "**/*.sock"],
+  "ignorePatterns": ["dist", "docs", "reports", "**/*.sock", "wait_finish_task_*"],
   "coverageAnalysis": "perTest",
   "reporters": ["progress", "clear-text", "json"],
   "jsonReporter": { "fileName": "reports/mutation/mutation.json" },

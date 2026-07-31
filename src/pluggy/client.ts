@@ -2,15 +2,17 @@ import type { z } from "zod";
 
 import type { Account } from "../core/account.ts";
 import type { Bill } from "../core/bill.ts";
+import type { InvestmentPosition } from "../core/investment.ts";
 import type { Bank, Connection, Consent } from "../core/contracts.ts";
 import { failureFor, parse, readJson, ResponseShapeError } from "./errors.ts";
-import { toAccount, toBill, toConnection, toConsent, toTransaction } from "./mapper.ts";
+import { toAccount, toBill, toConnection, toConsent, toInvestment, toTransaction } from "./mapper.ts";
 import { createTransport, type TransportOptions } from "./transport.ts";
-import { ACCOUNT, ACCOUNT_PAGE, BILL_PAGE, CONSENT_PAGE, ITEM, TRANSACTION_PAGE } from "./wire.ts";
+import { ACCOUNT, ACCOUNT_PAGE, BILL_PAGE, CONSENT_PAGE, INVESTMENT_PAGE, ITEM, TRANSACTION_PAGE } from "./wire.ts";
 
 export type PluggyClientOptions = TransportOptions;
 
 type Getter = <T>(path: string, schema: z.ZodType<T>, describe: string) => Promise<T>;
+type InvestmentPage = z.infer<typeof INVESTMENT_PAGE>;
 
 const MAX_TRANSACTION_HOPS = 500;
 
@@ -44,6 +46,90 @@ function createTransactionWalker(get: Getter): (account: Account) => Promise<rea
 
     throw new ResponseShapeError(`Walking ${account.id} exceeded ${MAX_TRANSACTION_HOPS} pages without reaching the end`);
   };
+}
+
+function createInvestmentWalker(get: Getter): Bank["getInvestments"] {
+  return async (connectionId) => {
+    const encodedConnectionId = encodeURIComponent(connectionId);
+    const [item, firstPage] = await Promise.all([
+      get(`/items/${encodedConnectionId}`, ITEM, `connection ${connectionId}`),
+      get(
+        `/investments?itemId=${encodedConnectionId}&pageSize=500&page=1`,
+        INVESTMENT_PAGE,
+        `investments ${connectionId}`,
+      ),
+    ]);
+
+    validateFirstInvestmentPage(firstPage, connectionId);
+    const pages = await Promise.all(
+      Array.from({ length: firstPage.totalPages - 1 }, (_, index) =>
+        get(
+          `/investments?itemId=${encodedConnectionId}&pageSize=500&page=${index + 2}`,
+          INVESTMENT_PAGE,
+          `investments ${connectionId}`,
+        ),
+      ),
+    );
+    validateFollowingInvestmentPages(firstPage, pages, connectionId);
+
+    return mapInvestments([firstPage, ...pages], toConnection(item), connectionId);
+  };
+}
+
+function validateFirstInvestmentPage(page: InvestmentPage, connectionId: string): void {
+  if (page.page !== 1) {
+    throw new ResponseShapeError(`Investment page 1 for connection ${connectionId} reported page ${page.page}`);
+  }
+  if (!Number.isSafeInteger(page.total) || page.total < 0) {
+    throw new ResponseShapeError(`Investment page 1 for connection ${connectionId} has an invalid total`);
+  }
+  if (!Number.isSafeInteger(page.totalPages) || page.totalPages < 1) {
+    throw new ResponseShapeError(`Investment page 1 for connection ${connectionId} has an invalid totalPages`);
+  }
+}
+
+function validateFollowingInvestmentPages(
+  firstPage: InvestmentPage,
+  pages: readonly InvestmentPage[],
+  connectionId: string,
+): void {
+  for (const [index, page] of pages.entries()) {
+    const requestedPage = index + 2;
+    if (page.page !== requestedPage) {
+      throw new ResponseShapeError(
+        `Investment page ${requestedPage} for connection ${connectionId} reported page ${page.page}`,
+      );
+    }
+    if (page.total !== firstPage.total) {
+      throw new ResponseShapeError(`Investment page ${requestedPage} for connection ${connectionId} changed total`);
+    }
+    if (page.totalPages !== firstPage.totalPages) {
+      throw new ResponseShapeError(`Investment page ${requestedPage} for connection ${connectionId} changed totalPages`);
+    }
+  }
+}
+
+function mapInvestments(
+  pages: readonly InvestmentPage[],
+  connection: Connection,
+  connectionId: string,
+): readonly InvestmentPosition[] {
+  const seenIds = new Set<string>();
+  const investments: InvestmentPosition[] = [];
+  for (const page of pages) {
+    for (const row of page.results) {
+      if (seenIds.has(row.id)) {
+        throw new ResponseShapeError(`Investment ${row.id} was already seen for connection ${connectionId}`);
+      }
+      seenIds.add(row.id);
+
+      const investment = toInvestment(row, connection);
+      if (investment !== null) {
+        investments.push(investment);
+      }
+    }
+  }
+  return investments;
 }
 
 
@@ -91,6 +177,7 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
   }
 
   const walkTransactions = createTransactionWalker(get);
+  const walkInvestments = createInvestmentWalker(get);
 
   return {
     verifyCredentials: async () => {
@@ -121,6 +208,8 @@ export function createPluggyClient(options: PluggyClientOptions): Bank {
 
       return [firstPage, ...pages].flatMap((page) => page.results.map((account) => toAccount(account, connection)));
     },
+
+    getInvestments: walkInvestments,
 
     getAccount: async (accountId: string): Promise<Account> => {
       const account = await get(`/accounts/${encodeURIComponent(accountId)}`, ACCOUNT, `account ${accountId}`);

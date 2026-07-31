@@ -12,9 +12,8 @@ import type { CategoryWriter } from "../../src/core/contracts.ts";
 
 export type FakeSourceOptions = Pick<
   FakeBankOptions,
-  "accounts" | "connections" | "unreachable" | "transactions" | "bills" | "consents" | "unreachableConsent"
+  "accounts" | "connections" | "unreachable" | "transactions" | "bills" | "investments" | "consents" | "unreachableConsent"
 >;
-
 export type FakeSource = Extract<Source, { readonly ok: true }> & {
   readonly bank: FakeBank;
 };
@@ -57,6 +56,11 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     unreachableConsentFields = { ...unreachableConsentFields, unreachableConsent: options.unreachableConsent };
   }
 
+  let investmentFields: Pick<FakeBankOptions, "investments"> = {};
+  if (options.investments !== undefined) {
+    investmentFields = { investments: options.investments };
+  }
+
   const bank = fakeBank({
     connections,
     accounts,
@@ -64,6 +68,7 @@ export function fakeSource(options: FakeSourceOptions = {}): FakeSource {
     ...transactionFields,
     ...billFields,
     ...consentFields,
+    ...investmentFields,
     ...unreachableConsentFields,
   });
   const store = createTransactionStore(

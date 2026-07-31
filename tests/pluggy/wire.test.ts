@@ -2,10 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { CONSENT_PAGE, ITEM, parseCategoryPage, TRANSACTION_PAGE } from "../../src/pluggy/wire.ts";
+import { CONSENT_PAGE, INVESTMENT_PAGE, ITEM, parseCategoryPage, TRANSACTION_PAGE } from "../../src/pluggy/wire.ts";
 
 function consentFixture(): unknown {
   return JSON.parse(readFileSync(new URL("../fixtures/consent.json", import.meta.url), "utf8"));
+}
+
+function investmentBody(id: string, overrides: Record<string, unknown> = {}): unknown {
+  return {
+    id,
+    name: `Investment ${id}`,
+    balance: 123.45,
+    currencyCode: "BRL",
+    type: "CDB",
+    ...overrides,
+  };
 }
 
 test("the category page refuses to be one of several", () => {
@@ -77,4 +88,48 @@ test("ITEM still parses without consecutiveFailedLoginAttempts", () => {
       lastUpdatedAt: "2026-07-25T09:00:00.000Z",
     }),
   );
+});
+
+test("the investment page parses the required position fields", () => {
+  const parsed = INVESTMENT_PAGE.parse({
+    total: 1,
+    totalPages: 1,
+    page: 1,
+    results: [investmentBody("investment-1")],
+  });
+
+  assert.deepEqual(parsed.results[0], {
+    id: "investment-1",
+    name: "Investment investment-1",
+    balance: 123.45,
+    currencyCode: "BRL",
+    type: "CDB",
+  });
+});
+
+test("the investment page accepts omitted and null optional position fields", () => {
+  assert.doesNotThrow(() => INVESTMENT_PAGE.parse({
+    total: 1,
+    totalPages: 1,
+    page: 1,
+    results: [investmentBody("omitted")],
+  }));
+
+  assert.doesNotThrow(() => INVESTMENT_PAGE.parse({
+    total: 1,
+    totalPages: 1,
+    page: 1,
+    results: [investmentBody("null", { subtype: null, quantity: null, amount: null, status: null })],
+  }));
+});
+
+test("the investment page drops nested transactions", () => {
+  const parsed = INVESTMENT_PAGE.parse({
+    total: 1,
+    totalPages: 1,
+    page: 1,
+    results: [investmentBody("investment-1", { transactions: [{ id: "transaction-1" }] })],
+  });
+
+  assert.equal("transactions" in parsed.results[0]!, false);
 });
