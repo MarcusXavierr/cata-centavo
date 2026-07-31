@@ -1,6 +1,6 @@
 {
   "name": "cata-centavo",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "MCP server for Brazilian Open Finance data, via Pluggy",
   "keywords": [
     "mcp",
