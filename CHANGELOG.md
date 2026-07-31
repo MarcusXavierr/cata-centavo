@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0: 2026-07-31
+
+### Features
+
+- **`listInstalmentPlans`** — credit card purchases still being paid off, grouped back together from the rows a bank publishes one instalment at a time.
+  - Merchant, purchase total, per-instalment amount, instalments paid and remaining, money still owed, and the cycle the last instalment falls due on
+  - `accountId` and `connectionId` filters, `includeSettled` for the finished and reversed plans
+  - Every figure says whether the bank published the rows behind it or the tool projected it from the instalments that did arrive
+  - A refunded instalment cancels the position it belongs to instead of surfacing as a purchase of its own
+  - A plan the bank renames halfway through stays one plan
+  - An annual fee that restarts each year is flagged as a renewal rather than filtered out
+
+### Notes
+
+- An instalment counts as paid only once it lands on a bill the bank has closed. Rows that are posted but not yet billed count as still owed, so the answer is never smaller than the cache can prove.
+- Cycles are the month a bill falls due, the same convention `getBillSummary` uses.
+- The purchase total is absent when the cache does not reach back to the first instalment. What is left to pay is still right, but what the purchase originally cost cannot be recovered from rows that were never cached.
+- An estimated figure can land a centavo either side of the truth, because the last instalment of a plan is where the rounding goes.
+- A card with no closing day stored and no bills published gets no final cycles, and the response says to call `setClosingDay`.
+
 ## 0.2.0: 2026-07-31
 
 ### Features

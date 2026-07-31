@@ -124,6 +124,7 @@ Ask the agent to show you what is uncategorized and tell it what those merchants
 - A bank linked in MeuPluggy whose UUID never reached `PLUGGY_ITEM_IDS` is invisible to this server. No endpoint lists the items on a Pluggy account, so this cannot be fixed in software. Compare `doctor`'s list against the banks you know you linked.
 - Freshness is Pluggy's schedule, not this server's. There is no "sync now": on-demand refresh is refused outright. One of the author's own three connections went three days without syncing while still reporting itself up to date, with nothing in the response explaining why.
 - A credit card's `usedCredit` figure is not what the card owes this month. It mixes the current billing cycle with instalments that have not been charged yet, and will not match what a banking app shows. `getBillSummary` answers that question instead, and it answers with a range rather than one number.
+- An instalment plan is put back together from the rows in the cache, so a purchase whose first instalments were never cached can say what is left to pay but not what it cost. `listInstalmentPlans` leaves that figure out instead of guessing at it.
 - An investment position tells you what it is worth now and nothing about how it got there. Pluggy returns fields that look like cost and profit, but they are not defined the same way across position types, so publishing one as a return would give a precise-looking wrong answer. `getInvestments` also leaves currencies apart: no conversion, and no total across them.
 
 ## Tools
@@ -141,6 +142,7 @@ Ask the agent to show you what is uncategorized and tell it what those merchants
 **Credit cards**
 - `getBills`: statements for one card, newest first.
 - `getBillSummary`: the cycle still in progress, as two independent estimates rather than one invented number.
+- `listInstalmentPlans`: purchases still being paid in instalments, with what is left on each one and the month it finishes.
 - `setClosingDay`: records a card's closing day locally, for banks that do not report it.
 - `listClosingDays`: the closing days stored so far.
 - `deleteClosingDay`: drops a stored closing day.
@@ -156,8 +158,6 @@ Ask the agent to show you what is uncategorized and tell it what those merchants
 - `listSources`: lists every configured connection with its sync status and consent state.
 
 Each tool's exact parameters and return shape are published in its own MCP description, which is what a model actually reads and the one version that cannot drift out of sync with a signature.
-
-Instalment purchases do not have a tool of their own yet. Card transactions do carry instalment metadata, so `getTransactionDetails` will show it per transaction, but nothing reconstructs a purchase across its instalments.
 
 ## License
 
