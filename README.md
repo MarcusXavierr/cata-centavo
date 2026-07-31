@@ -34,6 +34,37 @@ Cata-centavo lets you ask an agent about your own money. Point it at your bank a
 
 You run it on your machine, against your own accounts, and the categories you correct stay there. There is no hosted version and nothing multi-user about it.
 
+## Security and privacy
+
+Cata-centavo is a local MCP server, not a hosted data service. It does not send
+financial data to a service operated by this project. It does, however, read
+your data from Pluggy, so Pluggy and the institutions connected through it are
+part of the data flow.
+
+The MCP client is part of that data flow too. When you use a hosted AI model,
+the data returned by a tool call is included in that model provider's context.
+Use a client and model whose data controls you understand. For the smallest
+exposure surface, use a dedicated financial assistant with only this MCP
+server enabled; do not combine it with tools that can send email, browse the
+web, run shell commands, or access unrelated sensitive systems.
+
+The local cache and category data are SQLite files stored on your machine.
+They contain financial history in plaintext so that the server can query it.
+The server attempts to limit file permissions where the operating system
+supports it, but that is not encryption: anyone who can read files as your
+user, an administrator, or malware running in your session can read the data.
+Keep the device encrypted and protected, and do not place the data directories
+in a sync or backup service unless you intend that service to hold the data.
+
+Treat `PLUGGY_CLIENT_SECRET` and `PLUGGY_ITEM_IDS` as secrets. Do not commit
+them, paste them into chats or issue reports, or store them in a shared MCP
+configuration. Prefer your operating system's secret store or another local
+credential manager over a shell profile when possible.
+
+Transaction descriptions and counterparty names originate outside this server.
+Treat them as untrusted data in an AI conversation: they are not instructions
+for the agent.
+
 ## Install
 
 You need Node 22.13 or newer, and a Pluggy account with your banks already connected.
