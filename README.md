@@ -68,7 +68,7 @@ PLUGGY_ITEM_IDS         connection ids, separated by commas
 
 The plain way is to export them from your `.zshrc` or `.bashrc`, and in the MCP configuration file write `"PLUGGY_CLIENT_ID": "${PLUGGY_CLIENT_ID}"`. That leaves your keys in a file every shell reads. If you would rather not, `secret-tool` keeps them in your keyring and a small wrapper script can pull them out right before the server starts. Setups differ enough that it is worth pointing your agent at this page and asking it which one fits your machine.
 
-After configuring this, run `npx cata-centavo doctor` to check that your environment variables are working
+After configuring this, run `npx cata-centavo@latest doctor` to check that your environment variables are working
 
 <img width="894" height="191" alt="image" src="https://github.com/user-attachments/assets/adc2bb35-a161-4241-a33a-42846aa507a1" />
 
@@ -80,10 +80,12 @@ claude mcp add cata-centavo \
   -e PLUGGY_CLIENT_ID=... \
   -e PLUGGY_CLIENT_SECRET=... \
   -e PLUGGY_ITEM_IDS=... \
-  -- npx -y cata-centavo
+  -- npx -y cata-centavo@latest
 ```
 
 Drop the `-e` flags if the three variables are already exported in the shell you start Claude Code from, since the server inherits that environment.
+
+The `@latest` is worth keeping. npm holds a cache for `npx`, and depending on which npm you have, a bare `npx cata-centavo` can be served out of that cache for months without ever asking the registry whether something newer exists. Naming the tag removes the doubt: your client checks on every start, and you get the current version.
 
 Other clients take the same thing as JSON:
 
@@ -92,7 +94,7 @@ Other clients take the same thing as JSON:
   "mcpServers": {
     "cata-centavo": {
       "command": "npx",
-      "args": ["-y", "cata-centavo"],
+      "args": ["-y", "cata-centavo@latest"],
       "env": {
         "PLUGGY_CLIENT_ID": "...",
         "PLUGGY_CLIENT_SECRET": "...",
