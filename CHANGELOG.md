@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.1: 2026-07-31
+
+### Bug Fixes
+
+- **`listTransactions`** — a PIX transfer whose receiver has no document on file no longer takes the whole page down with it.
+  - Pluggy sends `documentNumber: null` there, and the schema accepted only `undefined`
+  - Fixed by @Trecto34 in #25
+
+- **Starting under an old Node** — the CLI now says which version it needs and which one it got, instead of crashing inside the module loader.
+  - `node:sqlite` used to throw `ERR_UNKNOWN_BUILTIN_MODULE` before any of our code ran
+  - The message points at PATH, since `npx` runs whatever node comes first and an MCP client never reads your shell profile
+  - The floor is still 22.13.0, and a version string we cannot parse is let through rather than blocked
+
+### Notes
+
+- The README now recommends `npx cata-centavo@latest`. npm keeps a cache for `npx`, and a bare `npx cata-centavo` can be served out of it for months without the registry ever being asked whether something newer exists. Naming the tag makes your client check on every start.
+
 ## 0.3.0: 2026-07-31
 
 ### Features
