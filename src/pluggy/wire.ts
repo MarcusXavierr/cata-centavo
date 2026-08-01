@@ -186,7 +186,7 @@ export const PAYMENT_DATA = z.object({
   receiver: z
     .object({
       name: z.string().nullish(),
-      documentNumber: z.object({ value: z.string().optional(), type: z.string().optional() }).optional(),
+      documentNumber: z.object({ value: z.string().nullish(), type: z.string().nullish() }).nullish(),
     })
     .nullish(),
   paymentMethod: z.string().nullish(),

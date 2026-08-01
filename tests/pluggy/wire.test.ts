@@ -41,6 +41,20 @@ test("transaction receiver names may be null on live Pluggy rows", () => {
   }));
 });
 
+test("PIX receiver documentNumber may be null on live Pluggy rows", () => {
+  assert.doesNotThrow(() => TRANSACTION_PAGE.parse({
+    results: [{
+      id: "transaction-1",
+      accountId: "account-1",
+      date: "2026-06-20T03:00:00.000Z",
+      description: "Pix recebido",
+      amount: 10,
+      paymentData: { receiver: { name: "MARIA SILVA", documentNumber: null } },
+    }],
+    next: null,
+  }));
+});
+
 test("the consent page parses a real-shaped body", () => {
   const parsed = CONSENT_PAGE.parse(consentFixture());
 
